@@ -93,126 +93,127 @@ log_warn() {
 }
 
 # Write state.json for web dashboard consumption
+# Uses python3 json module for reliable escaping (no bash string mangling)
 write_state_json() {
   local phase="$1"
   local current_task="$2"
 
-  # Count tasks
-  local tasks_total=0
-  local tasks_completed=0
-  if [[ -f "${RUN_DIR}/tasks.md" ]]; then
-    tasks_total="$(grep -c '^\- \[.\]' "${RUN_DIR}/tasks.md" 2>/dev/null || true)"
-    tasks_completed="$(grep -c '^\- \[x\]' "${RUN_DIR}/tasks.md" 2>/dev/null || true)"
-  fi
-
-  # Read files content
-  local tasks_content=""
-  local acceptance_content=""
-  [[ -f "${RUN_DIR}/tasks.md" ]] && tasks_content="$(cat "${RUN_DIR}/tasks.md")"
-  [[ -f "${RUN_DIR}/acceptance.md" ]] && acceptance_content="$(cat "${RUN_DIR}/acceptance.md")"
-
   # If current_task is empty, try to preserve from existing state.json
   if [[ -z "$current_task" ]] && [[ -f "${RUN_DIR}/state.json" ]]; then
-    current_task="$(grep -o '"current_task_name":"[^"]*"' "${RUN_DIR}/state.json" 2>/dev/null | cut -d'"' -f4)"
+    current_task="$(python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(d.get('current_task_name', ''), end='')
+except: pass
+" "${RUN_DIR}/state.json" 2>/dev/null)" || true
   fi
-
-  # Build iterations array
-  local iterations_json="[]"
-  if [[ -d "${RUN_DIR}/iterations" ]]; then
-    local iter_files=($(ls -1 "${RUN_DIR}/iterations"/*.md 2>/dev/null | sort))
-    if [[ ${#iter_files[@]} -gt 0 ]]; then
-      iterations_json="["
-      local first=true
-      for iter_file in "${iter_files[@]}"; do
-        local basename
-        basename="$(basename "$iter_file")"
-
-        # Parse iteration number from filename
-        local iter_num=""
-        if [[ "$basename" =~ ^([0-9]+)(-verify)?\.md$ ]]; then
-          iter_num="${BASH_REMATCH[1]}"
-        fi
-
-        # Skip if we already processed this iteration
-        if [[ -n "$iter_num" ]]; then
-          local summary=""
-          local verify_result=""
-          local verify_detail=""
-
-          # Read summary from iteration file
-          if [[ "$basename" =~ ^[0-9]+\.md$ ]]; then
-            summary="$(cat "$iter_file" | sed 's/"/\\"/g' | tr '\n' ' ')"
-          fi
-
-          # Read verify result if exists
-          local verify_file="${RUN_DIR}/iterations/${iter_num}-verify.md"
-          if [[ -f "$verify_file" ]]; then
-            local verify_content
-            verify_content="$(cat "$verify_file")"
-            if echo "$verify_content" | head -1 | grep -qi "^PASS"; then
-              verify_result="PASS"
-            elif echo "$verify_content" | head -1 | grep -qi "^FAIL"; then
-              verify_result="FAIL"
-            else
-              verify_result="SKIP"
-            fi
-            verify_detail="$(echo "$verify_content" | sed 's/"/\\"/g' | tr '\n' ' ')"
-          fi
-
-          # Append to JSON array (avoid duplicates)
-          if [[ "$first" == true ]]; then
-            first=false
-          else
-            iterations_json="${iterations_json},"
-          fi
-
-          iterations_json="${iterations_json}{\"number\":${iter_num},\"summary\":\"${summary}\",\"verify_result\":\"${verify_result}\",\"verify_detail\":\"${verify_detail}\"}"
-        fi
-      done
-      iterations_json="${iterations_json}]"
-    fi
-  fi
-
-  # Get timestamps
-  local started_at=""
-  local updated_at
-  updated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   # Read started_at from existing state if available
+  local started_at=""
   if [[ -f "${RUN_DIR}/state.json" ]]; then
-    started_at="$(grep -o '"started_at":"[^"]*"' "${RUN_DIR}/state.json" | cut -d'"' -f4)"
-  fi
-  if [[ -z "$started_at" ]]; then
-    started_at="$updated_at"
+    started_at="$(python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(d.get('started_at', ''), end='')
+except: pass
+" "${RUN_DIR}/state.json" 2>/dev/null)" || true
   fi
 
-  # Escape strings for JSON
-  local run_name_escaped="${RUN_NAME//\"/\\\"}"
-  local current_task_escaped="${current_task//\"/\\\"}"
-  local phase_escaped="${phase//\"/\\\"}"
-  local tasks_content_escaped="${tasks_content//\"/\\\"}"
-  tasks_content_escaped="${tasks_content_escaped//$'\n'/\\n}"
-  local acceptance_content_escaped="${acceptance_content//\"/\\\"}"
-  acceptance_content_escaped="${acceptance_content_escaped//$'\n'/\\n}"
+  # Generate state.json with python3 for correct JSON escaping
+  python3 -c "
+import json, glob, os, re, sys
+from datetime import datetime, timezone
 
-  # Write state.json
-  cat > "${RUN_DIR}/state.json" <<EOF
-{
-  "run_name": "${run_name_escaped}",
-  "model": "${MODEL}",
-  "max_iterations": ${MAX_ITERATIONS},
-  "current_iteration": ${CURRENT_ITERATION},
-  "phase": "${phase_escaped}",
-  "tasks_total": ${tasks_total},
-  "tasks_completed": ${tasks_completed},
-  "tasks": "${tasks_content_escaped}",
-  "acceptance": "${acceptance_content_escaped}",
-  "iterations": ${iterations_json},
-  "current_task_name": "${current_task_escaped}",
-  "started_at": "${started_at}",
-  "updated_at": "${updated_at}"
+run_dir = sys.argv[1]
+phase = sys.argv[2]
+current_task = sys.argv[3]
+model = sys.argv[4]
+max_iterations = int(sys.argv[5])
+current_iteration = int(sys.argv[6])
+started_at = sys.argv[7]
+
+updated_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+if not started_at:
+    started_at = updated_at
+
+# Read files
+tasks_content = ''
+acceptance_content = ''
+tasks_file = os.path.join(run_dir, 'tasks.md')
+acceptance_file = os.path.join(run_dir, 'acceptance.md')
+if os.path.isfile(tasks_file):
+    tasks_content = open(tasks_file).read()
+if os.path.isfile(acceptance_file):
+    acceptance_content = open(acceptance_file).read()
+
+# Count tasks
+tasks_total = len(re.findall(r'^- \[.\]', tasks_content, re.MULTILINE))
+tasks_completed = len(re.findall(r'^- \[x\]', tasks_content, re.MULTILINE))
+
+# Build iterations array
+iterations = []
+iter_dir = os.path.join(run_dir, 'iterations')
+if os.path.isdir(iter_dir):
+    files = sorted(glob.glob(os.path.join(iter_dir, '*.md')))
+    for f in files:
+        name = os.path.basename(f)
+        m = re.match(r'^(\d+)(-(verify))?\.md$', name)
+        if not m:
+            continue
+        num = int(m.group(1))
+        is_verify = m.group(3) is not None
+
+        # Find or create entry for this iteration number
+        entry = next((e for e in iterations if e['number'] == num), None)
+        if entry is None:
+            entry = {'number': num, 'summary': '', 'verify_result': '', 'verify_detail': ''}
+            iterations.append(entry)
+
+        content = open(f).read()
+        if is_verify:
+            first_line = content.split('\n', 1)[0].strip().upper()
+            if first_line.startswith('PASS'):
+                entry['verify_result'] = 'PASS'
+            elif first_line.startswith('FAIL'):
+                entry['verify_result'] = 'FAIL'
+            else:
+                entry['verify_result'] = 'SKIP'
+            entry['verify_detail'] = content
+        else:
+            entry['summary'] = content
+
+    iterations.sort(key=lambda e: e['number'])
+
+state = {
+    'run_name': os.path.basename(run_dir),
+    'model': model,
+    'max_iterations': max_iterations,
+    'current_iteration': current_iteration,
+    'phase': phase,
+    'tasks_total': tasks_total,
+    'tasks_completed': tasks_completed,
+    'tasks': tasks_content,
+    'acceptance': acceptance_content,
+    'iterations': iterations,
+    'current_task_name': current_task,
+    'started_at': started_at,
+    'updated_at': updated_at,
 }
-EOF
+
+with open(os.path.join(run_dir, 'state.json'), 'w') as f:
+    json.dump(state, f, indent=2, ensure_ascii=False)
+" "$RUN_DIR" "$phase" "$current_task" "$MODEL" "$MAX_ITERATIONS" "$CURRENT_ITERATION" "$started_at"
+}
+
+# Helper: write state only if web or approve mode is enabled
+maybe_write_state() {
+  local phase="$1"
+  local current_task="${2:-}"
+  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
+    write_state_json "$phase" "$current_task"
+  fi
 }
 
 parse_args() {
@@ -473,9 +474,7 @@ EOF
   fi
 
   log_pass "[0/${MAX_ITERATIONS}] Bootstrap complete — $(grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" || true) tasks"
-  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-    write_state_json "bootstrap" ""
-  fi
+  maybe_write_state "bootstrap"
 }
 
 count_remaining() {
@@ -515,9 +514,7 @@ Fix the issues before proceeding."
     log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
   fi
 
-  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-    write_state_json "task" "$task_name"
-  fi
+  maybe_write_state "task" "$task_name"
 
   local tasks
   tasks="$(cat "${RUN_DIR}/tasks.md")"
@@ -572,9 +569,7 @@ run_verify() {
   if [[ -z "$VERIFY_FILE" ]]; then
     log_pass "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (no verify file)"
     echo "SKIP — no verification plan provided" > "${RUN_DIR}/iterations/${iter}-verify.md"
-    if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-      write_state_json "verify" ""
-    fi
+    maybe_write_state "verify"
     return 0
   fi
 
@@ -595,9 +590,7 @@ run_verify() {
         echo "$result" >&2
         echo -e "${GREEN}━━━ END ━━━${NC}" >&2
       fi
-      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-        write_state_json "verify" ""
-      fi
+      maybe_write_state "verify"
       return 0
     else
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
@@ -608,9 +601,7 @@ run_verify() {
         echo "$result" >&2
         echo -e "${RED}━━━ END ━━━${NC}" >&2
       fi
-      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-        write_state_json "verify" ""
-      fi
+      maybe_write_state "verify"
       return 1
     fi
   elif [[ "$verify_ext" == "md" ]]; then
@@ -653,9 +644,7 @@ EOF
     if ! result="$(run_claude "$prompt")"; then
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: ERROR (claude failed)"
       echo "FAIL — claude verification failed" > "${RUN_DIR}/iterations/${iter}-verify.md"
-      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-        write_state_json "verify" ""
-      fi
+      maybe_write_state "verify"
       return 1
     fi
 
@@ -668,9 +657,7 @@ EOF
         echo "$result" >&2
         echo -e "${GREEN}━━━ END ━━━${NC}" >&2
       fi
-      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-        write_state_json "verify" ""
-      fi
+      maybe_write_state "verify"
       return 0
     else
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
@@ -679,17 +666,13 @@ EOF
         echo "$result" >&2
         echo -e "${RED}━━━ END ━━━${NC}" >&2
       fi
-      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-        write_state_json "verify" ""
-      fi
+      maybe_write_state "verify"
       return 1
     fi
   else
     log_warn "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (unsupported verify file type: .${verify_ext})"
     echo "SKIP — unsupported verify file type" > "${RUN_DIR}/iterations/${iter}-verify.md"
-    if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-      write_state_json "verify" ""
-    fi
+    maybe_write_state "verify"
     return 0
   fi
 }
@@ -802,14 +785,12 @@ start_web_server() {
 
   # Check if dashboard files exist
   if [[ ! -f "$server_path" ]]; then
-    log_fail "Error: server.py not found at $server_path"
-    log_fail "Run 'make link' or './install.sh' to install web dashboard files"
+    log_fail "Web dashboard not installed. Run install.sh to enable."
     exit 1
   fi
 
   if [[ ! -f "$dashboard_path" ]]; then
-    log_fail "Error: dashboard.html not found at $dashboard_path"
-    log_fail "Run 'make link' or './install.sh' to install web dashboard files"
+    log_fail "Web dashboard not installed. Run install.sh to enable."
     exit 1
   fi
 
@@ -886,9 +867,7 @@ wait_for_approval() {
   local context="$1"  # "bootstrap" or "iteration"
 
   # Update state to waiting_approval
-  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-    write_state_json "waiting_approval" ""
-  fi
+  maybe_write_state "waiting_approval"
 
   local approve_file="${RUN_DIR}/.signal-approve"
   local timeout="${APPROVE_TIMEOUT}"
@@ -940,33 +919,40 @@ wait_for_approval() {
     # Terminal mode: prompt with countdown
     local remaining=$timeout
 
-    log "Press Enter to continue, or Ctrl+C to stop..."
-    log "Auto-continue in ${remaining}s"
+    echo "" >&2
+    echo -e "${BLUE}${BOLD}⏸ Approval required: ${context}${NC}" >&2
+    echo "" >&2
+    echo "Press Enter to continue, or Ctrl+C to stop..." >&2
 
-    # Countdown timer
+    # Countdown timer with live display
     while [[ $remaining -gt 0 ]]; do
+      # Show countdown on same line (using carriage return)
+      echo -ne "Auto-continue in ${remaining}s...\r" >&2
+
       # Check for stop signal (if somehow created)
       if check_stop_signal; then
-        log ""
+        echo "" >&2
         log_warn "Stop signal received, exiting..."
         rm -f "${RUN_DIR}/.signal-stop"
         return 1
       fi
 
       # Read with timeout (1 second increments)
-      if read -r -t 1 -n 1 2>/dev/null; then
-        # User pressed a key
+      if read -r -t 1 2>/dev/null; then
+        # User pressed Enter
+        echo "" >&2
         log_pass "Approved via terminal, continuing..."
-        log ""
+        echo "" >&2
         return 0
       fi
 
       remaining=$((remaining - 1))
     done
 
-    # Timeout reached
+    # Timeout reached - clear the countdown line
+    echo -ne "\r$(printf '%*s' 30 '')\r" >&2
     log_warn "Approval timeout (${APPROVE_TIMEOUT}s), auto-continuing..."
-    log ""
+    echo "" >&2
     return 0
   fi
 }
@@ -999,9 +985,7 @@ main() {
   fi
 
   # Write initial state before bootstrap
-  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-    write_state_json "bootstrap" ""
-  fi
+  maybe_write_state "bootstrap"
 
   # Bootstrap phase (skip on resume)
   if [[ -z "$RESUME_DIR" ]]; then
@@ -1015,9 +999,7 @@ main() {
     if [[ "$APPROVE_MODE" == "true" ]]; then
       if ! wait_for_approval "bootstrap"; then
         log "Run stopped by user"
-        if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-          write_state_json "done" ""
-        fi
+        maybe_write_state "done"
         exit 0
       fi
     fi
@@ -1029,9 +1011,7 @@ main() {
     # Check for stop signal at start of each iteration
     if check_stop_signal; then
       log_warn "Stop signal received, exiting..."
-      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-        write_state_json "done" ""
-      fi
+      maybe_write_state "done"
       rm -f "${RUN_DIR}/.signal-stop"
       exit 0
     fi
@@ -1039,6 +1019,9 @@ main() {
     CURRENT_ITERATION="$iter"
     local remaining
     remaining="$(count_remaining)"
+
+    # Write state at start of each iteration
+    maybe_write_state "iteration_start"
 
     if [[ "$remaining" -gt 0 ]]; then
       # Task mode — snapshot before, enforce after, rollback on verify fail
@@ -1065,9 +1048,7 @@ main() {
     if [[ "$APPROVE_MODE" == "true" ]]; then
       if ! wait_for_approval "iteration ${iter}"; then
         log "Run stopped by user"
-        if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-          write_state_json "done" ""
-        fi
+        maybe_write_state "done"
         exit 0
       fi
     fi
@@ -1084,9 +1065,7 @@ main() {
     log_warn "${remaining} tasks remaining after ${MAX_ITERATIONS} iterations"
   fi
   log "Results in: ${RUN_DIR}/"
-  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
-    write_state_json "done" ""
-  fi
+  maybe_write_state "done"
 }
 
 main "$@"
