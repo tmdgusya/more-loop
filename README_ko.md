@@ -55,6 +55,7 @@ make help       # 모든 타겟 표시
 
 ```
 more-loop [OPTIONS] <prompt-file> [verify-file]
+more-loop --resume <run-dir> [OPTIONS]
 ```
 
 ### 인수
@@ -69,29 +70,54 @@ more-loop [OPTIONS] <prompt-file> [verify-file]
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
 | `-n, --iterations N` | 5 | 최대 iteration 횟수 |
-| `-m, --model MODEL` | sonnet | 사용할 모델 |
-| `--max-tasks N` | auto | Bootstrap 태스크 최대 수 (auto = iterations\*2, 5-30 범위) |
+| `-m, --model MODEL` | opus | 사용할 모델 |
+| `--max-tasks N` | auto | Bootstrap 태스크 최대 수 (기본: iterations와 동일, iterations 이하로 클램프) |
 | `-v, --verbose` | off | claude 전체 출력 표시 |
+| `-w, --web` | off | 웹 대시보드 서버 시작 |
+| `-a, --approve` | off | 승인 모드 (매 iteration 후 일시정지) |
+| `--approve-timeout N` | 180 | 승인 대기 타임아웃 초 (0 = 무한) |
+| `--port PORT` | auto | 웹 서버 포트 |
+| `--resume DIR` | | 중단된 실행을 run directory에서 이어하기 |
 | `-h, --help` | | 도움말 표시 |
 
 ### 예시
 
 ```bash
-# 기본: 5 iterations, 기본 모델
+# 기본: 5 iterations, 기본 모델 (opus)
 more-loop prompt.md
 
 # 셸 스크립트 검증 포함
 more-loop prompt.md verify.sh
 
 # 마크다운 검증과 커스텀 설정
-more-loop -n 10 -m opus prompt.md verify.md
+more-loop -n 10 -m sonnet prompt.md verify.md
 
-# 태스크 수 제한
-more-loop -n 8 --max-tasks 12 prompt.md verify.sh
+# 태스크 수 제한 (retry/improve 여유 확보)
+more-loop -n 8 --max-tasks 6 prompt.md verify.sh
 
 # 상세 출력
 more-loop -v prompt.md verify.sh
+
+# 중단된 실행 이어하기
+more-loop --resume .more-loop/my-project -n 8 -v
 ```
+
+## 중단된 실행 이어하기
+
+실행이 중단되면 (Ctrl+C, 에러 등) 이전 진행 상황에서 이어할 수 있습니다:
+
+```bash
+# 기존 run directory 확인
+ls .more-loop/
+
+# 이어하기 — bootstrap 스킵, 마지막 완료 iteration 다음부터 시작
+more-loop --resume .more-loop/my-project -n 10
+
+# verify 파일과 함께 이어하기
+more-loop --resume .more-loop/my-project -n 10 verify.sh
+```
+
+`--resume`은 run directory의 `tasks.md`, `acceptance.md`, `iterations/*.md`를 읽어 진행 상황을 파악합니다. `-n`, `-m`, `-v` 같은 옵션은 이어할 때 새로 지정 가능합니다.
 
 ## 포함된 스킬
 
@@ -104,17 +130,18 @@ more-loop -v prompt.md verify.sh
 
 ## LLM 행동 제어
 
-more-loop는 2중 방어 체계로 LLM 행동을 제어합니다:
+more-loop는 다중 방어 체계로 LLM 행동을 제어합니다:
 
 | 계층 | 메커니즘 | 설명 |
 |------|----------|------|
 | 시스템 프롬프트 | `--append-system-prompt` | phase별 지시를 주입하여 "하나만 해" 강제 |
 | 코드 강제 | `enforce_single_task()` | snapshot 비교 후 초과분을 결정적으로 revert |
+| Bootstrap 제한 | `enforce_max_tasks` | 태스크 목록이 제한을 초과하면 잘라냄 |
 
 시스템 프롬프트는 `system-prompts/` 디렉토리에 있으며 phase별로 분리되어 있습니다:
 
 - **`bootstrap.md`** — 태스크 수와 단위 제어
-- **`task.md`** — 단일 태스크 프로토콜 강제
+- **`task.md`** — 단일 태스크 프로토콜 강제, 스킬/서브에이전트 활용 안내
 - **`improve.md`** — 개선 모드 안내
 
 ## 중간 중지
@@ -127,7 +154,7 @@ more-loop는 2중 방어 체계로 LLM 행동을 제어합니다:
 pkill -f more-loop
 ```
 
-완료된 iteration의 진행 상황은 보존됩니다. 진행 중이던 iteration은 부분 적용될 수 있습니다 — 중지 후 `git status`와 `git log`를 확인하세요.
+완료된 iteration의 진행 상황은 보존됩니다. 진행 중이던 iteration은 부분 적용될 수 있습니다 — 중지 후 `git status`와 `git log`를 확인하세요. `--resume`으로 이어할 수 있습니다.
 
 ## 검증 유형
 

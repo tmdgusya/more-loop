@@ -55,6 +55,7 @@ Override the install prefix: `make install PREFIX=/usr/local`
 
 ```
 more-loop [OPTIONS] <prompt-file> [verify-file]
+more-loop --resume <run-dir> [OPTIONS]
 ```
 
 ### Arguments
@@ -69,26 +70,54 @@ more-loop [OPTIONS] <prompt-file> [verify-file]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `-n, --iterations N` | 5 | Max iterations |
-| `-m, --model MODEL` | sonnet | Model to use |
-| `--max-tasks N` | auto | Max tasks in bootstrap (auto = iterations\*2, clamped 5-30) |
+| `-m, --model MODEL` | opus | Model to use |
+| `--max-tasks N` | auto | Max tasks in bootstrap (default: same as iterations, clamped to <= iterations) |
 | `-v, --verbose` | off | Show full claude output |
+| `-w, --web` | off | Start web dashboard server |
+| `-a, --approve` | off | Enable approval mode (pause after each iteration) |
+| `--approve-timeout N` | 180 | Approval timeout in seconds (0 = infinite) |
+| `--port PORT` | auto | Web server port |
+| `--resume DIR` | | Resume an interrupted run from its run directory |
 | `-h, --help` | | Show help |
 
 ### Examples
 
 ```bash
-# Basic: 5 iterations with default model
+# Basic: 5 iterations with default model (opus)
 more-loop prompt.md
 
 # With shell script verification
 more-loop prompt.md verify.sh
 
 # With markdown verification and custom settings
-more-loop -n 10 -m opus prompt.md verify.md
+more-loop -n 10 -m sonnet prompt.md verify.md
+
+# Limit task count (leave room for retries)
+more-loop -n 8 --max-tasks 6 prompt.md verify.sh
 
 # Verbose output
 more-loop -v prompt.md verify.sh
+
+# Resume an interrupted run
+more-loop --resume .more-loop/my-project -n 8 -v
 ```
+
+## Resuming interrupted runs
+
+If a run is interrupted (Ctrl+C, error, etc.), you can resume from where it left off:
+
+```bash
+# Check existing run directories
+ls .more-loop/
+
+# Resume — skips bootstrap, continues from last completed iteration
+more-loop --resume .more-loop/my-project -n 10
+
+# Resume with verify file
+more-loop --resume .more-loop/my-project -n 10 verify.sh
+```
+
+`--resume` reads `tasks.md`, `acceptance.md`, and `iterations/*.md` from the run directory to determine progress. Options like `-n`, `-m`, `-v` can be changed on resume.
 
 ## Bundled skills
 
@@ -98,6 +127,22 @@ This repo includes two Claude Code skills for creating more-loop input files:
 - **`/more-loop-verify`** — Interactive wizard to create a `verify.sh` or `verify.md` verification file
 
 Skills are auto-discovered when working in the repo directory. After running `./install.sh` or `make install`, they're available globally.
+
+## LLM behavior control
+
+more-loop uses a multi-layer defense to control LLM behavior:
+
+| Layer | Mechanism | Description |
+|-------|-----------|-------------|
+| System prompt | `--append-system-prompt` | Per-phase instructions injected to enforce "one task only" |
+| Code enforcement | `enforce_single_task()` | Snapshot comparison, deterministically reverts excess tasks |
+| Bootstrap cap | `enforce_max_tasks` | Truncates task list if Claude exceeds the limit |
+
+System prompts live in `system-prompts/` and are separated by phase:
+
+- **`bootstrap.md`** — Task count and granularity control
+- **`task.md`** — Single-task protocol enforcement, encourages skill/subagent usage
+- **`improve.md`** — Improvement mode guidance
 
 ## Stopping mid-loop
 
@@ -109,7 +154,7 @@ From another terminal you can also run:
 pkill -f more-loop
 ```
 
-Progress from completed iterations is preserved. The in-progress iteration may be partially applied — check `git status` and `git log` after stopping.
+Progress from completed iterations is preserved. The in-progress iteration may be partially applied — check `git status` and `git log` after stopping. Use `--resume` to continue from where you left off.
 
 ## Verification types
 

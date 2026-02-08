@@ -5,4 +5,4 @@ verify-web-dashboard-quality.md
 verify-web-dashboard.sh
 
 # pycache
-__pycache__/**
+__pycache__

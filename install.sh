@@ -23,33 +23,38 @@ EOF
 install() {
   echo "Installing more-loop..."
 
-  # Binary
+  # Binary — remove first to handle existing symlinks from `make link`
   mkdir -p "$BIN_DIR"
+  rm -f "$BIN_DIR/more-loop"
   cp "$SCRIPT_DIR/more-loop" "$BIN_DIR/more-loop"
   chmod +x "$BIN_DIR/more-loop"
   echo "  Installed $BIN_DIR/more-loop"
 
-  # Skills
+  # Skills — remove first to handle existing symlinks
   mkdir -p "$SKILLS_DIR/more-loop-prompt"
   mkdir -p "$SKILLS_DIR/more-loop-verify"
+  rm -f "$SKILLS_DIR/more-loop-prompt/SKILL.md" "$SKILLS_DIR/more-loop-verify/SKILL.md"
   cp "$SCRIPT_DIR/.claude/skills/more-loop-prompt/SKILL.md" "$SKILLS_DIR/more-loop-prompt/SKILL.md"
   cp "$SCRIPT_DIR/.claude/skills/more-loop-verify/SKILL.md" "$SKILLS_DIR/more-loop-verify/SKILL.md"
   echo "  Installed skills to $SKILLS_DIR/"
 
-  # System prompts
+  # System prompts — remove first to handle existing symlinks
   mkdir -p "$DATA_DIR/system-prompts"
+  rm -f "$DATA_DIR"/system-prompts/*.md 2>/dev/null || true
   for f in "$SCRIPT_DIR"/system-prompts/*.md; do
     [[ -f "$f" ]] && cp "$f" "$DATA_DIR/system-prompts/"
   done
   echo "  Installed system prompts to $DATA_DIR/system-prompts/"
 
-  # Web dashboard files
+  # Web dashboard files — remove first to handle existing symlinks
   mkdir -p "$DATA_DIR"
   if [[ -f "$SCRIPT_DIR/server.py" ]]; then
+    rm -f "$DATA_DIR/server.py"
     cp "$SCRIPT_DIR/server.py" "$DATA_DIR/server.py"
     echo "  Installed $DATA_DIR/server.py"
   fi
   if [[ -f "$SCRIPT_DIR/dashboard.html" ]]; then
+    rm -f "$DATA_DIR/dashboard.html"
     cp "$SCRIPT_DIR/dashboard.html" "$DATA_DIR/dashboard.html"
     echo "  Installed $DATA_DIR/dashboard.html"
   fi

@@ -14,10 +14,11 @@ NC='\033[0m'
 # Defaults
 MAX_ITERATIONS=5
 MAX_TASKS=""
-MODEL="sonnet"
+MODEL="opus"
 VERBOSE=false
 PROMPT_FILE=""
 VERIFY_FILE=""
+RESUME_DIR=""
 WEB_MODE=false
 APPROVE_MODE=false
 APPROVE_TIMEOUT=180
@@ -52,6 +53,7 @@ PHASE=""
 usage() {
   cat <<'EOF'
 Usage: more-loop [OPTIONS] <prompt-file> [verify-file]
+       more-loop --resume <run-dir> [OPTIONS]
 
 Arguments:
   prompt-file             Spec/prompt describing what to build
@@ -62,13 +64,14 @@ Arguments:
 
 Options:
   -n, --iterations N      Max iterations (default: 5)
-  -m, --model MODEL       Model to use (default: sonnet)
+  -m, --model MODEL       Model to use (default: opus)
   -v, --verbose           Show full claude output
   -w, --web               Start web dashboard server
   -a, --approve           Enable approval mode (pause after each iteration)
   --approve-timeout N     Approval timeout in seconds (default: 180, 0 = infinite)
   --port PORT             Web server port (default: auto-select)
-  --max-tasks N           Max tasks in bootstrap (default: auto = iterations*2, clamped 5-30)
+  --max-tasks N           Max tasks in bootstrap (default: same as iterations, clamped to <= iterations)
+  --resume DIR            Resume an interrupted run from its run directory
   -h, --help              Show help
 EOF
 }
@@ -98,8 +101,8 @@ write_state_json() {
   local tasks_total=0
   local tasks_completed=0
   if [[ -f "${RUN_DIR}/tasks.md" ]]; then
-    tasks_total="$(grep -c '^\- \[.\]' "${RUN_DIR}/tasks.md" 2>/dev/null || echo 0)"
-    tasks_completed="$(grep -c '^\- \[x\]' "${RUN_DIR}/tasks.md" 2>/dev/null || echo 0)"
+    tasks_total="$(grep -c '^\- \[.\]' "${RUN_DIR}/tasks.md" 2>/dev/null || true)"
+    tasks_completed="$(grep -c '^\- \[x\]' "${RUN_DIR}/tasks.md" 2>/dev/null || true)"
   fi
 
   # Read files content
@@ -247,6 +250,10 @@ parse_args() {
         MAX_TASKS="$2"
         shift 2
         ;;
+      --resume)
+        RESUME_DIR="$2"
+        shift 2
+        ;;
       --port)
         WEB_PORT="$2"
         shift 2
@@ -270,6 +277,23 @@ parse_args() {
         ;;
     esac
   done
+
+  # --resume mode: validate run directory
+  if [[ -n "$RESUME_DIR" ]]; then
+    if [[ ! -d "$RESUME_DIR" ]]; then
+      echo "Error: resume directory not found: $RESUME_DIR" >&2
+      exit 1
+    fi
+    if [[ ! -f "$RESUME_DIR/tasks.md" || ! -f "$RESUME_DIR/acceptance.md" ]]; then
+      echo "Error: resume directory missing tasks.md or acceptance.md: $RESUME_DIR" >&2
+      exit 1
+    fi
+    # Recover PROMPT_FILE and VERIFY_FILE from the run directory
+    if [[ -z "$PROMPT_FILE" && -f "$RESUME_DIR/prompt.md" ]]; then
+      PROMPT_FILE="$RESUME_DIR/prompt.md"
+    fi
+    return
+  fi
 
   if [[ -z "$PROMPT_FILE" ]]; then
     echo "Error: prompt-file is required" >&2
@@ -308,17 +332,58 @@ setup_run_dir() {
   fi
 }
 
+resume_run_dir() {
+  RUN_DIR="$RESUME_DIR"
+  RUN_NAME="$(basename "$RUN_DIR")"
+
+  # Find the last completed iteration number
+  local last_iter=0
+  for f in "${RUN_DIR}"/iterations/[0-9]*.md; do
+    [[ -f "$f" ]] || continue
+    local basename
+    basename="$(basename "$f" .md)"
+    # Skip verify files (e.g., 3-verify.md)
+    [[ "$basename" =~ -verify$ ]] && continue
+    local num="${basename}"
+    if [[ "$num" =~ ^[0-9]+$ ]] && [[ "$num" -gt "$last_iter" ]]; then
+      last_iter="$num"
+    fi
+  done
+
+  RESUME_FROM=$((last_iter + 1))
+}
+
 run_claude() {
   local prompt="$1"
   local system_prompt="${2:-}"
   local sys_args=()
   [[ -n "$system_prompt" ]] && sys_args=(--append-system-prompt "$system_prompt")
 
+  if [[ "$VERBOSE" == true ]]; then
+    echo -e "${YELLOW}━━━ PROMPT ━━━${NC}" >&2
+    echo "$prompt" | head -40 >&2
+    local prompt_lines
+    prompt_lines="$(echo "$prompt" | wc -l)"
+    if [[ "$prompt_lines" -gt 40 ]]; then
+      echo -e "${YELLOW}... (${prompt_lines} lines total, truncated)${NC}" >&2
+    fi
+    if [[ -n "$system_prompt" ]]; then
+      echo -e "${YELLOW}━━━ SYSTEM PROMPT ━━━${NC}" >&2
+      echo "$system_prompt" >&2
+    fi
+    echo -e "${YELLOW}━━━ CLAUDE OUTPUT ━━━${NC}" >&2
+  fi
+
   local output
   local rc=0
 
   if [[ "$VERBOSE" == true ]]; then
-    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "${sys_args[@]}" "$prompt")" || rc=$?
+    # Show claude stdout in real-time on stderr, while still capturing it
+    # stderr from claude goes to terminal directly (fd 3 trick avoids merging into $output)
+    exec 3>&2
+    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "${sys_args[@]}" "$prompt" 2>&3 | tee /dev/stderr)" || rc=$?
+    exec 3>&-
+    echo -e "${YELLOW}━━━ END ━━━${NC}" >&2
   else
     output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "${sys_args[@]}" "$prompt" 2>/dev/null)" || rc=$?
   fi
@@ -335,12 +400,14 @@ run_claude() {
 bootstrap() {
   log "[0/${MAX_ITERATIONS}] Bootstrap — generating tasks and acceptance criteria"
 
-  # Calculate max_tasks
+  # Calculate max_tasks — must be <= iterations to be completable
   local max_tasks="${MAX_TASKS}"
   if [[ -z "$max_tasks" ]]; then
-    max_tasks=$((MAX_ITERATIONS * 2))
-    (( max_tasks < 5 )) && max_tasks=5
-    (( max_tasks > 30 )) && max_tasks=30
+    max_tasks="$MAX_ITERATIONS"
+  fi
+  if [[ "$max_tasks" -gt "$MAX_ITERATIONS" ]]; then
+    log_warn "max_tasks (${max_tasks}) > iterations (${MAX_ITERATIONS}), clamping to ${MAX_ITERATIONS}"
+    max_tasks="$MAX_ITERATIONS"
   fi
 
   local spec
@@ -392,14 +459,31 @@ EOF
     return 1
   fi
 
-  log_pass "[0/${MAX_ITERATIONS}] Bootstrap complete"
-  if [[ "$WEB_MODE" == "true" ]]; then
+  # Enforce max tasks — truncate excess tasks from the checklist
+  local task_count
+  task_count="$(grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" 2>/dev/null || true)"
+  if [[ "$task_count" -gt "$max_tasks" ]]; then
+    log_warn "enforce_max_tasks: Bootstrap generated ${task_count} tasks, truncating to ${max_tasks}"
+    local cut_line
+    cut_line="$(grep -n '^\- \[ \]' "${RUN_DIR}/tasks.md" | sed -n "$((max_tasks + 1))p" | cut -d: -f1)"
+    if [[ -n "$cut_line" ]]; then
+      head -n "$((cut_line - 1))" "${RUN_DIR}/tasks.md" > "${RUN_DIR}/tasks.md.tmp"
+      mv "${RUN_DIR}/tasks.md.tmp" "${RUN_DIR}/tasks.md"
+    fi
+  fi
+
+  log_pass "[0/${MAX_ITERATIONS}] Bootstrap complete — $(grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" || true) tasks"
+  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
     write_state_json "bootstrap" ""
   fi
 }
 
 count_remaining() {
-  grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" 2>/dev/null || echo 0
+  if [[ -f "${RUN_DIR}/tasks.md" ]]; then
+    grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" || true
+  else
+    echo 0
+  fi
 }
 
 get_next_task_name() {
@@ -431,7 +515,7 @@ Fix the issues before proceeding."
     log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
   fi
 
-  if [[ "$WEB_MODE" == "true" ]]; then
+  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
     write_state_json "task" "$task_name"
   fi
 
@@ -488,7 +572,7 @@ run_verify() {
   if [[ -z "$VERIFY_FILE" ]]; then
     log_pass "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (no verify file)"
     echo "SKIP — no verification plan provided" > "${RUN_DIR}/iterations/${iter}-verify.md"
-    if [[ "$WEB_MODE" == "true" ]]; then
+    if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
       write_state_json "verify" ""
     fi
     return 0
@@ -506,7 +590,12 @@ run_verify() {
       log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
       echo "PASS" > "${RUN_DIR}/iterations/${iter}-verify.md"
       echo "$result" >> "${RUN_DIR}/iterations/${iter}-verify.md"
-      if [[ "$WEB_MODE" == "true" ]]; then
+      if [[ "$VERBOSE" == true ]] && [[ -n "$result" ]]; then
+        echo -e "${GREEN}━━━ VERIFY OUTPUT ━━━${NC}" >&2
+        echo "$result" >&2
+        echo -e "${GREEN}━━━ END ━━━${NC}" >&2
+      fi
+      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
         write_state_json "verify" ""
       fi
       return 0
@@ -514,7 +603,12 @@ run_verify() {
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
       echo "FAIL (exit code ${rc})" > "${RUN_DIR}/iterations/${iter}-verify.md"
       echo "$result" >> "${RUN_DIR}/iterations/${iter}-verify.md"
-      if [[ "$WEB_MODE" == "true" ]]; then
+      if [[ "$VERBOSE" == true ]] && [[ -n "$result" ]]; then
+        echo -e "${RED}━━━ VERIFY OUTPUT ━━━${NC}" >&2
+        echo "$result" >&2
+        echo -e "${RED}━━━ END ━━━${NC}" >&2
+      fi
+      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
         write_state_json "verify" ""
       fi
       return 1
@@ -525,31 +619,41 @@ run_verify() {
     verify_content="$(cat "$VERIFY_FILE")"
     local iter_summary
     iter_summary="$(cat "${RUN_DIR}/iterations/${iter}.md")"
+    local tasks_content
+    tasks_content="$(cat "${RUN_DIR}/tasks.md")"
 
     local prompt
     prompt="$(cat <<EOF
-You are a verification agent. Evaluate whether the latest task was completed correctly.
+You are a verification agent in an ITERATIVE development process.
 
-## Verification checklist:
+## Full verification checklist (for reference):
 ${verify_content}
+
+## Current task list (checked = done, unchecked = not yet):
+${tasks_content}
 
 ## Latest iteration summary:
 ${iter_summary}
 
 ## Instructions:
-Examine the current state of the codebase and evaluate the verification checklist.
-Output exactly one of:
-- PASS — if the verification criteria are met
-- FAIL — followed by a description of what failed and why
+This is an iterative build — NOT all tasks are complete yet.
 
-Be strict but fair. Only pass if the criteria are genuinely met.
+1. Identify which task was just completed in this iteration
+2. Only evaluate checklist items RELEVANT to that specific task
+3. Ignore checklist items for features not yet implemented — those are for future iterations
+
+Output exactly one of:
+- PASS — if the work done in THIS iteration is correct and doesn't break anything
+- FAIL — followed by what specifically is wrong with THIS iteration's work
+
+A task that is correctly implemented should PASS even if unrelated checklist items are still unchecked.
 EOF
 )"
 
     if ! result="$(run_claude "$prompt")"; then
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: ERROR (claude failed)"
       echo "FAIL — claude verification failed" > "${RUN_DIR}/iterations/${iter}-verify.md"
-      if [[ "$WEB_MODE" == "true" ]]; then
+      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
         write_state_json "verify" ""
       fi
       return 1
@@ -559,13 +663,23 @@ EOF
 
     if echo "$result" | head -5 | grep -qi "^PASS"; then
       log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
-      if [[ "$WEB_MODE" == "true" ]]; then
+      if [[ "$VERBOSE" == true ]]; then
+        echo -e "${GREEN}━━━ VERIFY DETAIL ━━━${NC}" >&2
+        echo "$result" >&2
+        echo -e "${GREEN}━━━ END ━━━${NC}" >&2
+      fi
+      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
         write_state_json "verify" ""
       fi
       return 0
     else
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
-      if [[ "$WEB_MODE" == "true" ]]; then
+      if [[ "$VERBOSE" == true ]]; then
+        echo -e "${RED}━━━ VERIFY DETAIL ━━━${NC}" >&2
+        echo "$result" >&2
+        echo -e "${RED}━━━ END ━━━${NC}" >&2
+      fi
+      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
         write_state_json "verify" ""
       fi
       return 1
@@ -573,7 +687,7 @@ EOF
   else
     log_warn "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (unsupported verify file type: .${verify_ext})"
     echo "SKIP — unsupported verify file type" > "${RUN_DIR}/iterations/${iter}-verify.md"
-    if [[ "$WEB_MODE" == "true" ]]; then
+    if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
       write_state_json "verify" ""
     fi
     return 0
@@ -601,25 +715,29 @@ revert_last_task() {
 enforce_single_task() {
   local snapshot_file="$1"
   local tasks_file="${RUN_DIR}/tasks.md"
+  local max_per_iter=3  # allow small batches of related tasks
 
   local before_count after_count
-  before_count="$(grep -c '^\- \[x\]' "$snapshot_file" 2>/dev/null || echo 0)"
-  after_count="$(grep -c '^\- \[x\]' "$tasks_file" 2>/dev/null || echo 0)"
+  before_count="$(grep -c '^\- \[x\]' "$snapshot_file" 2>/dev/null || true)"
+  after_count="$(grep -c '^\- \[x\]' "$tasks_file" 2>/dev/null || true)"
   local delta=$(( after_count - before_count ))
 
-  if [[ "$delta" -le 1 ]]; then
+  if [[ "$delta" -le "$max_per_iter" ]]; then
+    if [[ "$delta" -gt 1 ]]; then
+      log_warn "enforce_single_task: Claude checked ${delta} tasks (allowed, max=${max_per_iter})"
+    fi
     return 0
   fi
 
-  log_warn "enforce_single_task: Claude checked ${delta} tasks, reverting to keep only the first"
+  log_warn "enforce_single_task: Claude checked ${delta} tasks, trimming to ${max_per_iter}"
 
-  # Restore snapshot then check only the first previously-unchecked task
-  local first_unchecked_line
-  first_unchecked_line="$(grep -n '^\- \[ \]' "$snapshot_file" | head -1 | cut -d: -f1)"
+  # Restore snapshot then check only the first N unchecked tasks
+  local unchecked_lines
+  unchecked_lines="$(grep -n '^\- \[ \]' "$snapshot_file" | head -"$max_per_iter" | cut -d: -f1)"
   cp "$snapshot_file" "$tasks_file"
-  if [[ -n "$first_unchecked_line" ]]; then
-    sed -i "${first_unchecked_line}s/^\- \[ \]/- [x]/" "$tasks_file"
-  fi
+  for line_num in $unchecked_lines; do
+    sed -i "${line_num}s/^\- \[ \]/- [x]/" "$tasks_file"
+  done
 }
 
 run_improve_iteration() {
@@ -768,7 +886,7 @@ wait_for_approval() {
   local context="$1"  # "bootstrap" or "iteration"
 
   # Update state to waiting_approval
-  if [[ "$WEB_MODE" == "true" ]]; then
+  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
     write_state_json "waiting_approval" ""
   fi
 
@@ -855,10 +973,22 @@ wait_for_approval() {
 
 main() {
   parse_args "$@"
-  setup_run_dir
 
-  log "Starting more-loop: ${MAX_ITERATIONS} iterations, model=${MODEL}"
-  log "Run directory: ${RUN_DIR}"
+  local start_iter=1
+
+  if [[ -n "$RESUME_DIR" ]]; then
+    resume_run_dir
+    start_iter="$RESUME_FROM"
+    local remaining
+    remaining="$(count_remaining)"
+    log "Resuming more-loop: ${MAX_ITERATIONS} iterations, model=${MODEL}"
+    log "Run directory: ${RUN_DIR}"
+    log "Resuming from iteration ${start_iter} — ${remaining} tasks remaining"
+  else
+    setup_run_dir
+    log "Starting more-loop: ${MAX_ITERATIONS} iterations, model=${MODEL}"
+    log "Run directory: ${RUN_DIR}"
+  fi
   echo "" >&2
 
   # Start web server if --web flag is set
@@ -866,50 +996,54 @@ main() {
     start_web_server
   fi
 
-  # Bootstrap phase
-  if ! bootstrap; then
-    log_fail "Bootstrap failed, aborting"
-    exit 1
-  fi
-  echo "" >&2
+  # Bootstrap phase (skip on resume)
+  if [[ -z "$RESUME_DIR" ]]; then
+    if ! bootstrap; then
+      log_fail "Bootstrap failed, aborting"
+      exit 1
+    fi
+    echo "" >&2
 
-  # Approval checkpoint after bootstrap
-  if [[ "$APPROVE_MODE" == "true" ]]; then
-    if ! wait_for_approval "bootstrap"; then
-      log "Run stopped by user"
-      if [[ "$WEB_MODE" == "true" ]]; then
-        write_state_json "done" ""
+    # Approval checkpoint after bootstrap
+    if [[ "$APPROVE_MODE" == "true" ]]; then
+      if ! wait_for_approval "bootstrap"; then
+        log "Run stopped by user"
+        if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
+          write_state_json "done" ""
+        fi
+        exit 0
       fi
-      exit 0
     fi
   fi
 
   # Main loop
-  local iter=1
+  local iter="$start_iter"
   while [[ $iter -le $MAX_ITERATIONS ]]; do
     # Check for stop signal at start of each iteration
     if check_stop_signal; then
       log_warn "Stop signal received, exiting..."
-      if [[ "$WEB_MODE" == "true" ]]; then
+      if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
         write_state_json "done" ""
       fi
       rm -f "${RUN_DIR}/.signal-stop"
       exit 0
     fi
 
+    CURRENT_ITERATION="$iter"
     local remaining
     remaining="$(count_remaining)"
 
     if [[ "$remaining" -gt 0 ]]; then
-      # Task mode — snapshot before, enforce single task after
+      # Task mode — snapshot before, enforce after, rollback on verify fail
       cp "${RUN_DIR}/tasks.md" "${RUN_DIR}/.tasks-snapshot.md"
       run_task_iteration "$iter" || true
       enforce_single_task "${RUN_DIR}/.tasks-snapshot.md"
 
       # Verify
       if ! run_verify "$iter"; then
-        # Verification failed — revert task and retry next iteration
-        revert_last_task
+        # Verification failed — restore tasks.md to pre-iteration state
+        # Code changes remain (no git rollback) but checkboxes are fully reverted
+        cp "${RUN_DIR}/.tasks-snapshot.md" "${RUN_DIR}/tasks.md"
       fi
       rm -f "${RUN_DIR}/.tasks-snapshot.md"
     else
@@ -924,7 +1058,7 @@ main() {
     if [[ "$APPROVE_MODE" == "true" ]]; then
       if ! wait_for_approval "iteration ${iter}"; then
         log "Run stopped by user"
-        if [[ "$WEB_MODE" == "true" ]]; then
+        if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
           write_state_json "done" ""
         fi
         exit 0
@@ -943,7 +1077,7 @@ main() {
     log_warn "${remaining} tasks remaining after ${MAX_ITERATIONS} iterations"
   fi
   log "Results in: ${RUN_DIR}/"
-  if [[ "$WEB_MODE" == "true" ]]; then
+  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
     write_state_json "done" ""
   fi
 }

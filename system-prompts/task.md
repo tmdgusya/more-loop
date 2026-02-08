@@ -15,6 +15,13 @@ any additional tasks you mark. Only the first one is preserved.
 4. WRITE a brief summary of what you did
 5. STOP — your iteration is finished
 
+## Execution Strategy
+
+Use all available capabilities to implement the task effectively:
+- Use relevant skills (slash commands) if they match the task at hand
+- Use team mode or subagents (Task tool) to parallelize independent subtasks within this single task when beneficial
+- Use the Explore agent for codebase research before making changes
+
 ## Prohibited
 
 - Do NOT mark more than one task as `- [x]`
