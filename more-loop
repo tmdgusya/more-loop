@@ -1,0 +1,474 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# more-loop — Iterative development script wrapping the claude CLI
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Defaults
+MAX_ITERATIONS=5
+MODEL="sonnet"
+VERBOSE=false
+PROMPT_FILE=""
+VERIFY_FILE=""
+
+usage() {
+  cat <<'EOF'
+Usage: more-loop [OPTIONS] <prompt-file> [verify-file]
+
+Arguments:
+  prompt-file             Spec/prompt describing what to build
+  verify-file             Verification plan (shell script or markdown)
+                          If shell script (.sh): runs it, exit 0 = pass
+                          If markdown (.md): claude evaluates checklist
+                          If omitted: skips verification step
+
+Options:
+  -n, --iterations N      Max iterations (default: 5)
+  -m, --model MODEL       Model to use (default: sonnet)
+  -v, --verbose           Show full claude output
+  -h, --help              Show help
+EOF
+}
+
+log() {
+  echo -e "${BLUE}${BOLD}$1${NC}" >&2
+}
+
+log_pass() {
+  echo -e "${GREEN}$1${NC}" >&2
+}
+
+log_fail() {
+  echo -e "${RED}$1${NC}" >&2
+}
+
+log_warn() {
+  echo -e "${YELLOW}$1${NC}" >&2
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -n|--iterations)
+        MAX_ITERATIONS="$2"
+        shift 2
+        ;;
+      -m|--model)
+        MODEL="$2"
+        shift 2
+        ;;
+      -v|--verbose)
+        VERBOSE=true
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -*)
+        echo "Unknown option: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+      *)
+        if [[ -z "$PROMPT_FILE" ]]; then
+          PROMPT_FILE="$1"
+        elif [[ -z "$VERIFY_FILE" ]]; then
+          VERIFY_FILE="$1"
+        else
+          echo "Unexpected argument: $1" >&2
+          usage >&2
+          exit 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$PROMPT_FILE" ]]; then
+    echo "Error: prompt-file is required" >&2
+    usage >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$PROMPT_FILE" ]]; then
+    echo "Error: prompt file not found: $PROMPT_FILE" >&2
+    exit 1
+  fi
+
+  if [[ -n "$VERIFY_FILE" && ! -f "$VERIFY_FILE" ]]; then
+    echo "Error: verify file not found: $VERIFY_FILE" >&2
+    exit 1
+  fi
+}
+
+setup_run_dir() {
+  local base_name
+  base_name="$(basename "$PROMPT_FILE")"
+  base_name="${base_name%.*}"
+
+  RUN_DIR=".more-loop/${base_name}"
+  if [[ -d "$RUN_DIR" ]]; then
+    RUN_DIR=".more-loop/${base_name}-$(date +%s)"
+  fi
+
+  mkdir -p "${RUN_DIR}/iterations"
+  cp "$PROMPT_FILE" "${RUN_DIR}/prompt.md"
+
+  if [[ -n "$VERIFY_FILE" ]]; then
+    cp "$VERIFY_FILE" "${RUN_DIR}/$(basename "$VERIFY_FILE")"
+  fi
+}
+
+run_claude() {
+  local prompt="$1"
+  local output
+  local rc=0
+
+  if [[ "$VERBOSE" == true ]]; then
+    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "$prompt")" || rc=$?
+  else
+    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "$prompt" 2>/dev/null)" || rc=$?
+  fi
+
+  if [[ $rc -ne 0 ]]; then
+    log_fail "claude exited with code $rc"
+    echo "$output"
+    return $rc
+  fi
+
+  echo "$output"
+}
+
+bootstrap() {
+  log "[0/${MAX_ITERATIONS}] Bootstrap — generating tasks and acceptance criteria"
+
+  local spec
+  spec="$(cat "$PROMPT_FILE")"
+
+  local prompt
+  prompt="$(cat <<EOF
+You are bootstrapping an iterative development process.
+
+Read the following spec and produce two files:
+
+1. \`acceptance.md\` — A markdown checklist of acceptance criteria (definition of done).
+   Each item should be a \`- [ ]\` checkbox. These are high-level criteria that define success.
+
+2. \`tasks.md\` — A markdown checklist of atomic implementation tasks.
+   Each item should be a \`- [ ]\` checkbox. These are concrete, ordered steps to implement the spec.
+   Each task should be small enough to complete in a single iteration.
+   Order them by dependency (do foundational tasks first).
+
+Write both files to: ${RUN_DIR}/
+
+Here is the spec:
+
+${spec}
+EOF
+)"
+
+  local output
+  if ! output="$(run_claude "$prompt")"; then
+    log_fail "Bootstrap failed"
+    echo "$output" > "${RUN_DIR}/iterations/0-bootstrap.md"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/0-bootstrap.md"
+
+  # Validate bootstrap created required files
+  if [[ ! -f "${RUN_DIR}/acceptance.md" ]]; then
+    log_fail "Bootstrap failed: acceptance.md not created"
+    return 1
+  fi
+  if [[ ! -f "${RUN_DIR}/tasks.md" ]]; then
+    log_fail "Bootstrap failed: tasks.md not created"
+    return 1
+  fi
+
+  log_pass "[0/${MAX_ITERATIONS}] Bootstrap complete"
+}
+
+count_remaining() {
+  grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" 2>/dev/null || echo 0
+}
+
+get_next_task_name() {
+  grep '^\- \[ \]' "${RUN_DIR}/tasks.md" | head -1 | sed 's/^- \[ \] //'
+}
+
+run_task_iteration() {
+  local iter="$1"
+  local remaining
+  remaining="$(count_remaining)"
+  local task_name
+  task_name="$(get_next_task_name)"
+
+  local retry_info=""
+  if [[ -f "${RUN_DIR}/iterations/$((iter - 1))-verify.md" ]]; then
+    local prev_verify
+    prev_verify="$(cat "${RUN_DIR}/iterations/$((iter - 1))-verify.md")"
+    if echo "$prev_verify" | grep -qi "FAIL"; then
+      retry_info="The previous attempt FAILED. Here is the verification feedback:
+
+${prev_verify}
+
+Fix the issues before proceeding."
+      log_warn "[${iter}/${MAX_ITERATIONS}] Retry: \"${task_name}\" — ${remaining} tasks remaining"
+    else
+      log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
+    fi
+  else
+    log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
+  fi
+
+  local tasks
+  tasks="$(cat "${RUN_DIR}/tasks.md")"
+  local acceptance
+  acceptance="$(cat "${RUN_DIR}/acceptance.md")"
+  local prev_summary=""
+  if [[ -f "${RUN_DIR}/iterations/$((iter - 1)).md" ]]; then
+    prev_summary="Previous iteration summary:
+$(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
+  fi
+
+  local prompt
+  prompt="$(cat <<EOF
+You are on iteration ${iter} of ${MAX_ITERATIONS} in an iterative development process.
+
+## Current tasks (${remaining} remaining):
+${tasks}
+
+## Acceptance criteria:
+${acceptance}
+
+${prev_summary}
+
+${retry_info}
+
+## Instructions:
+1. Pick the NEXT unchecked task (\`- [ ]\`) from tasks.md
+2. Implement it fully
+3. Mark it as done by changing \`- [ ]\` to \`- [x]\` in ${RUN_DIR}/tasks.md
+4. Write a brief summary of what you did to stdout
+
+Do ONE task only. Be thorough but focused.
+EOF
+)"
+
+  local output
+  if ! output="$(run_claude "$prompt")"; then
+    log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during task iteration"
+    echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/${iter}.md"
+}
+
+run_verify() {
+  local iter="$1"
+
+  if [[ -z "$VERIFY_FILE" ]]; then
+    log_pass "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (no verify file)"
+    echo "SKIP — no verification plan provided" > "${RUN_DIR}/iterations/${iter}-verify.md"
+    return 0
+  fi
+
+  local verify_ext="${VERIFY_FILE##*.}"
+  local result
+  local rc=0
+
+  if [[ "$verify_ext" == "sh" ]]; then
+    # Run shell script verification
+    result="$(bash "$VERIFY_FILE" 2>&1)" || rc=$?
+
+    if [[ $rc -eq 0 ]]; then
+      log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
+      echo "PASS" > "${RUN_DIR}/iterations/${iter}-verify.md"
+      echo "$result" >> "${RUN_DIR}/iterations/${iter}-verify.md"
+      return 0
+    else
+      log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
+      echo "FAIL (exit code ${rc})" > "${RUN_DIR}/iterations/${iter}-verify.md"
+      echo "$result" >> "${RUN_DIR}/iterations/${iter}-verify.md"
+      return 1
+    fi
+  elif [[ "$verify_ext" == "md" ]]; then
+    # Use claude to evaluate markdown checklist
+    local verify_content
+    verify_content="$(cat "$VERIFY_FILE")"
+    local iter_summary
+    iter_summary="$(cat "${RUN_DIR}/iterations/${iter}.md")"
+
+    local prompt
+    prompt="$(cat <<EOF
+You are a verification agent. Evaluate whether the latest task was completed correctly.
+
+## Verification checklist:
+${verify_content}
+
+## Latest iteration summary:
+${iter_summary}
+
+## Instructions:
+Examine the current state of the codebase and evaluate the verification checklist.
+Output exactly one of:
+- PASS — if the verification criteria are met
+- FAIL — followed by a description of what failed and why
+
+Be strict but fair. Only pass if the criteria are genuinely met.
+EOF
+)"
+
+    if ! result="$(run_claude "$prompt")"; then
+      log_fail "[${iter}/${MAX_ITERATIONS}] Verify: ERROR (claude failed)"
+      echo "FAIL — claude verification failed" > "${RUN_DIR}/iterations/${iter}-verify.md"
+      return 1
+    fi
+
+    echo "$result" > "${RUN_DIR}/iterations/${iter}-verify.md"
+
+    if echo "$result" | head -5 | grep -qi "^PASS"; then
+      log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
+      return 0
+    else
+      log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
+      return 1
+    fi
+  else
+    log_warn "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (unsupported verify file type: .${verify_ext})"
+    echo "SKIP — unsupported verify file type" > "${RUN_DIR}/iterations/${iter}-verify.md"
+    return 0
+  fi
+}
+
+revert_last_task() {
+  # Find the last checked-off task and uncheck it
+  # Uses sed to revert only the LAST [x] match in the file
+  local tmpfile
+  tmpfile="$(mktemp)"
+
+  # Find the line number of the last [x] task
+  local last_checked
+  last_checked="$(grep -n '^\- \[x\]' "${RUN_DIR}/tasks.md" | tail -1 | cut -d: -f1)"
+
+  if [[ -n "$last_checked" ]]; then
+    sed "${last_checked}s/^- \[x\]/- [ ]/" "${RUN_DIR}/tasks.md" > "$tmpfile"
+    mv "$tmpfile" "${RUN_DIR}/tasks.md"
+  else
+    rm -f "$tmpfile"
+  fi
+}
+
+run_improve_iteration() {
+  local iter="$1"
+
+  log "[${iter}/${MAX_ITERATIONS}] Improve mode — all tasks complete"
+
+  local tasks
+  tasks="$(cat "${RUN_DIR}/tasks.md")"
+  local acceptance
+  acceptance="$(cat "${RUN_DIR}/acceptance.md")"
+  local prev_summary=""
+  if [[ -f "${RUN_DIR}/iterations/$((iter - 1)).md" ]]; then
+    prev_summary="Previous iteration summary:
+$(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
+  fi
+
+  local prompt
+  prompt="$(cat <<EOF
+You are in improvement mode. All planned tasks are complete.
+
+## Completed tasks:
+${tasks}
+
+## Acceptance criteria:
+${acceptance}
+
+${prev_summary}
+
+## Instructions:
+Analyze the codebase. Choose the single most impactful improvement from:
+- Simplify complex code
+- Refactor for clarity
+- Add missing tests
+- Improve error handling
+- Optimize performance
+- Improve documentation
+
+Implement the improvement. Write a brief summary of what you did to stdout.
+EOF
+)"
+
+  local output
+  if ! output="$(run_claude "$prompt")"; then
+    log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during improve iteration"
+    echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/${iter}.md"
+}
+
+main() {
+  parse_args "$@"
+  setup_run_dir
+
+  log "Starting more-loop: ${MAX_ITERATIONS} iterations, model=${MODEL}"
+  log "Run directory: ${RUN_DIR}"
+  echo "" >&2
+
+  # Bootstrap phase
+  if ! bootstrap; then
+    log_fail "Bootstrap failed, aborting"
+    exit 1
+  fi
+  echo "" >&2
+
+  # Main loop
+  local iter=1
+  while [[ $iter -le $MAX_ITERATIONS ]]; do
+    local remaining
+    remaining="$(count_remaining)"
+
+    if [[ "$remaining" -gt 0 ]]; then
+      # Task mode
+      run_task_iteration "$iter" || true
+
+      # Verify
+      if ! run_verify "$iter"; then
+        # Verification failed — revert task and retry next iteration
+        revert_last_task
+      fi
+    else
+      # Improvement mode
+      run_improve_iteration "$iter" || true
+
+      # Verify improvements too
+      run_verify "$iter" || true
+    fi
+
+    echo "" >&2
+    iter=$((iter + 1))
+  done
+
+  remaining="$(count_remaining)"
+  echo "" >&2
+  if [[ "$remaining" -eq 0 ]]; then
+    log_pass "All tasks complete after ${MAX_ITERATIONS} iterations"
+  else
+    log_warn "${remaining} tasks remaining after ${MAX_ITERATIONS} iterations"
+  fi
+  log "Results in: ${RUN_DIR}/"
+}
+
+main "$@"
