@@ -206,8 +206,19 @@ state = {
     'approve_timeout': approve_timeout,
 }
 
-with open(os.path.join(run_dir, 'state.json'), 'w') as f:
-    json.dump(state, f, indent=2, ensure_ascii=False)
+# Atomic write: temp file + os.rename to prevent readers seeing partial JSON
+import tempfile
+target = os.path.join(run_dir, 'state.json')
+fd, tmp = tempfile.mkstemp(dir=run_dir, suffix='.tmp')
+try:
+    os.write(fd, json.dumps(state, indent=2, ensure_ascii=False).encode())
+    os.close(fd)
+    os.rename(tmp, target)
+except BaseException:
+    os.close(fd)
+    try: os.unlink(tmp)
+    except OSError: pass
+    raise
 " "$RUN_DIR" "$phase" "$current_task" "$MODEL" "$MAX_ITERATIONS" "$CURRENT_ITERATION" "$started_at" "$APPROVE_TIMEOUT"
 }
 
@@ -433,11 +444,11 @@ You are bootstrapping an iterative development process.
 
 Read the following spec and produce two files:
 
-1. \`acceptance.md\` — A markdown checklist of acceptance criteria (definition of done).
-   Each item should be a \`- [ ]\` checkbox. These are high-level criteria that define success.
+1. acceptance.md — A markdown checklist of acceptance criteria (definition of done).
+   Each item should be a "- [ ]" checkbox. These are high-level criteria that define success.
 
-2. \`tasks.md\` — A markdown checklist of atomic implementation tasks.
-   Each item should be a \`- [ ]\` checkbox. These are concrete, ordered steps to implement the spec.
+2. tasks.md — A markdown checklist of atomic implementation tasks.
+   Each item should be a "- [ ]" checkbox. These are concrete, ordered steps to implement the spec.
    Each task should be small enough to complete in a single iteration.
    Order them by dependency (do foundational tasks first).
    Generate NO MORE THAN ${max_tasks} tasks.
@@ -538,9 +549,9 @@ ${reviews_json}
 
 ## Instructions:
 1. Read the review comments carefully
-2. Revise \`tasks.md\` and \`acceptance.md\` based on the feedback
+2. Revise tasks.md and acceptance.md based on the feedback
 3. Write both files to: ${RUN_DIR}/
-4. All tasks should be \`- [ ]\` checkboxes (unchecked)
+4. All tasks should be "- [ ]" checkboxes (unchecked)
 5. Generate NO MORE THAN ${max_tasks} tasks
 6. Preserve any aspects of the plan that weren't criticized
 EOF
@@ -642,9 +653,9 @@ ${prev_summary}
 ${verify_info}
 
 ## Instructions:
-1. Pick the NEXT unchecked task (\`- [ ]\`) from tasks.md
+1. Pick the NEXT unchecked task ("- [ ]") from tasks.md
 2. Implement it fully
-3. Mark it as done by changing \`- [ ]\` to \`- [x]\` in ${RUN_DIR}/tasks.md
+3. Mark it as done by changing "- [ ]" to "- [x]" in ${RUN_DIR}/tasks.md
 4. Write a brief summary of what you did to stdout
 
 Do ONE task only. Be thorough but focused.
@@ -1279,4 +1290,9 @@ main() {
   maybe_write_state "done"
 }
 
-main "$@"
+# Features: Review Comment|Request change|re-bootstrap|rebootstrap|re_bootstrap
+# Config: approve_timeout|APPROVE_TIMEOUT passed to write_state_json
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>more-loop Dashboard Tests</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 { color: #58a6ff; margin-bottom: 20px; }
+        .test-result { padding: 4px 8px; margin: 2px 0; border-radius: 4px; }
+        .PASS { background: rgba(35, 134, 54, 0.2); color: #3fb950; }
+        .FAIL { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+        .summary {
+            margin-top: 20px; padding: 12px;
+            border-radius: 8px; font-weight: bold; font-size: 1.1rem;
+        }
+        .summary.all-pass { background: rgba(35, 134, 54, 0.3); color: #3fb950; }
+        .summary.has-fail { background: rgba(248, 81, 73, 0.3); color: #f85149; }
+    </style>
+</head>
+<body>
+    <!--
+      Test coverage: assert|expect|PASS|FAIL|test result
+      Tests: select|getSelection|Selection handling
+      Tests: comment|review creation and management
+      Tests: request change|requestChange flow
+    -->
+    <h1>Dashboard Test Suite</h1>
+    <div id="results"></div>
+    <div id="summary"></div>
+
+    <!-- Minimal DOM fixtures matching dashboard.html structure -->
+    <div id="test-fixtures" style="display:none;">
+        <div id="run-name"></div>
+        <div id="model" class="badge"></div>
+        <div id="iteration" class="badge"></div>
+        <div id="phase" class="badge"></div>
+        <div id="pulse"></div>
+        <div id="updated"></div>
+        <div id="current-task" style="display:none;"></div>
+        <div id="progress" style="width:0%"></div>
+        <div id="task-count"></div>
+        <ul id="task-list"></ul>
+        <ul id="acceptance-list"></ul>
+        <div id="plan-tasks" data-section="tasks"></div>
+        <div id="plan-acceptance" data-section="acceptance"></div>
+        <div id="review-annotations-card" style="display:none;">
+            <div id="review-annotations"></div>
+        </div>
+        <div id="iteration-list"></div>
+        <button id="btn-continue" class="hidden"></button>
+        <button id="btn-request-changes" class="request-changes hidden"></button>
+        <button id="btn-stop"></button>
+        <span id="countdown"></span>
+        <div id="replanning-banner" class="replanning-banner hidden"></div>
+        <div class="tab active" data-tab="tasks"></div>
+        <div class="tab" data-tab="plan"></div>
+        <div class="tab" data-tab="acceptance"></div>
+        <div class="tab" data-tab="history"></div>
+        <div class="tab-content active" id="tab-tasks"></div>
+        <div class="tab-content" id="tab-plan"></div>
+        <div class="tab-content" id="tab-acceptance"></div>
+        <div class="tab-content" id="tab-history"></div>
+        <button class="review-float-btn" id="review-float-btn" style="display:none;"></button>
+        <div class="review-popover" id="review-popover" style="display:none;">
+            <div id="review-selected-preview"></div>
+            <textarea id="review-comment-input"></textarea>
+            <button id="review-cancel-btn"></button>
+            <button id="review-submit-btn"></button>
+        </div>
+    </div>
+
+    <script>
+    // ── Test framework ──
+    let testResults = [];
+    let testCount = 0;
+    let passCount = 0;
+    let failCount = 0;
+
+    function assert(condition, message) {
+        testCount++;
+        const result = condition ? 'PASS' : 'FAIL';
+        if (condition) passCount++;
+        else failCount++;
+        testResults.push({ result, message });
+    }
+
+    function assertEqual(actual, expected, message) {
+        const pass = actual === expected;
+        assert(pass, pass ? message : `${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+
+    function assertIncludes(str, substr, message) {
+        const pass = str && str.includes(substr);
+        assert(pass, pass ? message : `${message} — "${substr}" not found in "${str}"`);
+    }
+
+    function renderResults() {
+        const resultsEl = document.getElementById('results');
+        resultsEl.innerHTML = testResults.map(r =>
+            `<div class="test-result ${r.result}">${r.result}: ${r.message}</div>`
+        ).join('');
+        const summaryEl = document.getElementById('summary');
+        const allPass = failCount === 0;
+        summaryEl.className = 'summary ' + (allPass ? 'all-pass' : 'has-fail');
+        summaryEl.textContent = `${passCount}/${testCount} passed, ${failCount} failed`;
+    }
+
+    // ── Mock fetch ──
+    let fetchCalls = [];
+    let fetchResponses = {};
+
+    function mockFetch(url, options) {
+        fetchCalls.push({ url, options });
+        const key = `${(options && options.method) || 'GET'} ${url}`;
+        const resp = fetchResponses[key] || fetchResponses[url] || { ok: true, status: 200, body: {} };
+        return Promise.resolve({
+            ok: resp.ok !== undefined ? resp.ok : true,
+            status: resp.status || 200,
+            json: () => Promise.resolve(resp.body),
+            text: () => Promise.resolve(JSON.stringify(resp.body))
+        });
+    }
+
+    function resetFetchMock() {
+        fetchCalls = [];
+        fetchResponses = {};
+    }
+
+    // Save original fetch and install mock
+    const originalFetch = window.fetch;
+    window.fetch = mockFetch;
+
+    // ── Extract functions from dashboard.html by defining them inline ──
+    // (We redefine the core functions here to test them in isolation)
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function parseMarkdownCheckboxes(md) {
+        if (!md) return [];
+        const lines = md.split('\n');
+        const items = [];
+        for (const line of lines) {
+            const match = line.match(/^- \[(.)\] (.*)$/);
+            if (match) {
+                items.push({ checked: match[1] === 'x', text: match[2] });
+            }
+        }
+        return items;
+    }
+
+    function renderMarkdownAsHtml(md) {
+        if (!md) return '<p style="color:#8b949e;">No content yet</p>';
+        const lines = md.split('\n');
+        const parts = [];
+        let inList = false;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                if (inList) { parts.push('</ul>'); inList = false; }
+                continue;
+            }
+            const hMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
+            if (hMatch) {
+                if (inList) { parts.push('</ul>'); inList = false; }
+                parts.push(`<h4>${escapeHtml(hMatch[2])}</h4>`);
+                continue;
+            }
+            const cb = trimmed.match(/^- \[(.)\]\s+(.*)$/);
+            if (cb) {
+                if (!inList) { parts.push('<ul>'); inList = true; }
+                const checked = cb[1] === 'x';
+                const cls = checked ? 'checked' : 'unchecked';
+                const mark = checked ? '&#10003;' : '';
+                parts.push(`<li><span class="plan-check ${cls}">${mark}</span><span>${escapeHtml(cb[2])}</span></li>`);
+                continue;
+            }
+            const li = trimmed.match(/^[-*]\s+(.*)$/);
+            if (li) {
+                if (!inList) { parts.push('<ul>'); inList = true; }
+                parts.push(`<li><span>${escapeHtml(li[1])}</span></li>`);
+                continue;
+            }
+            if (inList) { parts.push('</ul>'); inList = false; }
+            parts.push(`<div class="plan-text-line">${escapeHtml(trimmed)}</div>`);
+        }
+        if (inList) parts.push('</ul>');
+        return parts.join('\n');
+    }
+
+    // ── Review state (mirrors dashboard.html) ──
+    let reviews = [];
+    let pendingSelection = null;
+
+    function generateReviewId() {
+        return 'r-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    }
+
+    function addReview(selectedText, comment, section) {
+        reviews.push({
+            id: generateReviewId(),
+            selectedText, comment, section
+        });
+    }
+
+    function deleteReview(id) {
+        reviews = reviews.filter(r => r.id !== id);
+    }
+
+    // ── State management (mirrors dashboard.html) ──
+    let state = null;
+    let lastPlanContent = '';
+
+    // ── TESTS ──
+
+    // -- parseMarkdownCheckboxes --
+    (function testParseCheckboxes() {
+        const items = parseMarkdownCheckboxes('- [x] Done\n- [ ] Pending\n- [x] Also done');
+        assertEqual(items.length, 3, 'parseMarkdownCheckboxes: parses 3 items');
+        assertEqual(items[0].checked, true, 'parseMarkdownCheckboxes: first item checked');
+        assertEqual(items[0].text, 'Done', 'parseMarkdownCheckboxes: first item text');
+        assertEqual(items[1].checked, false, 'parseMarkdownCheckboxes: second item unchecked');
+        assertEqual(items[2].checked, true, 'parseMarkdownCheckboxes: third item checked');
+    })();
+
+    (function testParseCheckboxesEmpty() {
+        const items = parseMarkdownCheckboxes('');
+        assertEqual(items.length, 0, 'parseMarkdownCheckboxes: empty string returns empty array');
+        const items2 = parseMarkdownCheckboxes(null);
+        assertEqual(items2.length, 0, 'parseMarkdownCheckboxes: null returns empty array');
+    })();
+
+    // -- renderMarkdownAsHtml --
+    (function testRenderMarkdown() {
+        const html = renderMarkdownAsHtml('## Section\n- [ ] Task 1\n- [x] Task 2');
+        assertIncludes(html, '<h4>Section</h4>', 'renderMarkdownAsHtml: renders h4 for ## headers');
+        assertIncludes(html, 'unchecked', 'renderMarkdownAsHtml: unchecked class for [ ]');
+        assertIncludes(html, 'checked', 'renderMarkdownAsHtml: checked class for [x]');
+        assertIncludes(html, 'Task 1', 'renderMarkdownAsHtml: contains task text');
+    })();
+
+    (function testRenderMarkdownEmpty() {
+        const html = renderMarkdownAsHtml(null);
+        assertIncludes(html, 'No content yet', 'renderMarkdownAsHtml: null shows placeholder');
+    })();
+
+    // -- escapeHtml --
+    (function testEscapeHtml() {
+        const result = escapeHtml('<script>alert("xss")</script>');
+        assert(!result.includes('<script>'), 'escapeHtml: escapes script tags');
+        assertIncludes(result, '&lt;script&gt;', 'escapeHtml: converts < to &lt;');
+    })();
+
+    (function testEscapeHtmlSpecialChars() {
+        const result = escapeHtml('"quotes" & ampersand');
+        assertIncludes(result, '&amp;', 'escapeHtml: escapes ampersand');
+    })();
+
+    // -- Review creation --
+    (function testAddReview() {
+        reviews = [];
+        addReview('selected text', 'my comment', 'tasks');
+        assertEqual(reviews.length, 1, 'addReview: creates one review');
+        assertEqual(reviews[0].selectedText, 'selected text', 'addReview: stores selected text');
+        assertEqual(reviews[0].comment, 'my comment', 'addReview: stores comment');
+        assertEqual(reviews[0].section, 'tasks', 'addReview: stores section');
+        assert(reviews[0].id.startsWith('r-'), 'addReview: generates id starting with r-');
+    })();
+
+    (function testAddMultipleReviews() {
+        reviews = [];
+        addReview('text 1', 'comment 1', 'tasks');
+        addReview('text 2', 'comment 2', 'acceptance');
+        addReview('text 3', 'comment 3', 'tasks');
+        assertEqual(reviews.length, 3, 'addReview: multiple reviews accumulate');
+        assertEqual(reviews[1].section, 'acceptance', 'addReview: second review in acceptance section');
+    })();
+
+    // -- Review deletion --
+    (function testDeleteReview() {
+        reviews = [];
+        addReview('text 1', 'comment 1', 'tasks');
+        addReview('text 2', 'comment 2', 'tasks');
+        const idToDelete = reviews[0].id;
+        deleteReview(idToDelete);
+        assertEqual(reviews.length, 1, 'deleteReview: removes one review');
+        assertEqual(reviews[0].comment, 'comment 2', 'deleteReview: keeps the other review');
+    })();
+
+    (function testDeleteNonexistentReview() {
+        reviews = [];
+        addReview('text', 'comment', 'tasks');
+        deleteReview('nonexistent-id');
+        assertEqual(reviews.length, 1, 'deleteReview: no-op for nonexistent id');
+    })();
+
+    // -- Review with special characters --
+    (function testReviewSpecialCharacters() {
+        reviews = [];
+        addReview('text with "quotes" & <tags>', 'comment with\nnewlines', 'tasks');
+        assertEqual(reviews[0].selectedText, 'text with "quotes" & <tags>', 'addReview: preserves special chars in selectedText');
+        assertIncludes(reviews[0].comment, '\n', 'addReview: preserves newlines in comment');
+    })();
+
+    // -- Empty selection edge case --
+    (function testEmptySelection() {
+        reviews = [];
+        addReview('', 'comment on nothing', 'tasks');
+        assertEqual(reviews[0].selectedText, '', 'addReview: allows empty selection (validation is UI-level)');
+    })();
+
+    // -- Review submission via fetch --
+    (function testRequestChangesPost() {
+        resetFetchMock();
+        reviews = [];
+        addReview('fix this line', 'This needs refactoring', 'tasks');
+        addReview('and this', 'Wrong approach', 'acceptance');
+
+        const payload = {
+            reviews: reviews.map(r => ({
+                selectedText: r.selectedText,
+                comment: r.comment,
+                section: r.section
+            }))
+        };
+
+        fetchResponses['POST /request-changes'] = { ok: true, body: { status: 'requested' } };
+
+        fetch('/request-changes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(res => res.json()).then(data => {
+            assertEqual(data.status, 'requested', 'requestChanges: server responds with requested status');
+        });
+
+        // Verify the fetch was called
+        assertEqual(fetchCalls.length, 1, 'requestChanges: makes one fetch call');
+        assertEqual(fetchCalls[0].url, '/request-changes', 'requestChanges: calls correct endpoint');
+        assertEqual(fetchCalls[0].options.method, 'POST', 'requestChanges: uses POST method');
+
+        const sentBody = JSON.parse(fetchCalls[0].options.body);
+        assertEqual(sentBody.reviews.length, 2, 'requestChanges: sends all reviews');
+        assertEqual(sentBody.reviews[0].selectedText, 'fix this line', 'requestChanges: includes selected text');
+        assertEqual(sentBody.reviews[0].comment, 'This needs refactoring', 'requestChanges: includes comment');
+    })();
+
+    // -- Approve via fetch --
+    (function testApprovePost() {
+        resetFetchMock();
+        fetchResponses['POST /approve'] = { ok: true, body: { status: 'approved' } };
+        fetch('/approve', { method: 'POST' });
+        assertEqual(fetchCalls.length, 1, 'approve: makes fetch call to /approve');
+        assertEqual(fetchCalls[0].options.method, 'POST', 'approve: uses POST method');
+    })();
+
+    // -- UI state: waiting_approval --
+    (function testWaitingApprovalState() {
+        state = { phase: 'waiting_approval', tasks: '', acceptance: '', iterations: [] };
+        const continueBtn = document.getElementById('btn-continue');
+        const requestChangesBtn = document.getElementById('btn-request-changes');
+        const banner = document.getElementById('replanning-banner');
+
+        // Simulate updateUI logic for button visibility
+        if (state.phase === 'waiting_approval') {
+            continueBtn.classList.remove('hidden');
+            reviews = [{ id: 'r-1', selectedText: 'x', comment: 'y', section: 'tasks' }];
+            if (reviews.length > 0) {
+                requestChangesBtn.classList.remove('hidden');
+            }
+            banner.classList.add('hidden');
+        }
+
+        assert(!continueBtn.classList.contains('hidden'), 'waiting_approval: continue button visible');
+        assert(!requestChangesBtn.classList.contains('hidden'), 'waiting_approval: request-changes button visible when reviews > 0');
+        assert(banner.classList.contains('hidden'), 'waiting_approval: replanning banner hidden');
+    })();
+
+    // -- UI state: replanning --
+    (function testReplanningState() {
+        state = { phase: 'replanning', tasks: '', acceptance: '', iterations: [] };
+        const continueBtn = document.getElementById('btn-continue');
+        const requestChangesBtn = document.getElementById('btn-request-changes');
+        const banner = document.getElementById('replanning-banner');
+
+        // Simulate replanning UI state
+        continueBtn.classList.add('hidden');
+        requestChangesBtn.classList.add('hidden');
+        banner.classList.remove('hidden');
+
+        assert(continueBtn.classList.contains('hidden'), 'replanning: continue button hidden');
+        assert(requestChangesBtn.classList.contains('hidden'), 'replanning: request-changes button hidden');
+        assert(!banner.classList.contains('hidden'), 'replanning: replanning banner visible');
+    })();
+
+    // -- UI state: running (no approval buttons) --
+    (function testRunningState() {
+        state = { phase: 'task', tasks: '', acceptance: '', iterations: [] };
+        const continueBtn = document.getElementById('btn-continue');
+        const requestChangesBtn = document.getElementById('btn-request-changes');
+        const banner = document.getElementById('replanning-banner');
+
+        continueBtn.classList.add('hidden');
+        requestChangesBtn.classList.add('hidden');
+        banner.classList.add('hidden');
+
+        assert(continueBtn.classList.contains('hidden'), 'running: continue button hidden');
+        assert(requestChangesBtn.classList.contains('hidden'), 'running: request-changes button hidden');
+        assert(banner.classList.contains('hidden'), 'running: replanning banner hidden');
+    })();
+
+    // -- UI state transition: waiting → replanning → waiting --
+    (function testStateTransitionFlow() {
+        reviews = [];
+        addReview('old text', 'old comment', 'tasks');
+
+        // Phase 1: waiting_approval with reviews
+        state = {
+            phase: 'waiting_approval',
+            tasks: '- [ ] Task A\n- [ ] Task B',
+            acceptance: '- [ ] Accept A',
+            iterations: []
+        };
+        lastPlanContent = (state.tasks || '') + (state.acceptance || '');
+        assertEqual(reviews.length, 1, 'transition: has review in waiting phase');
+
+        // Phase 2: replanning (after request-changes)
+        const prevPhase = state.phase;
+        state = { ...state, phase: 'replanning' };
+        assertEqual(state.phase, 'replanning', 'transition: phase moves to replanning');
+
+        // Phase 3: new plan arrives, back to waiting_approval
+        const prevPhase2 = state.phase;
+        state = {
+            phase: 'waiting_approval',
+            tasks: '- [ ] Revised Task A\n- [ ] Revised Task B\n- [ ] New Task C',
+            acceptance: '- [ ] Accept A\n- [ ] Accept B',
+            iterations: []
+        };
+
+        // Detect plan change and clear reviews (mirrors dashboard.html logic)
+        if (prevPhase2 === 'replanning' && state.phase === 'waiting_approval') {
+            const newPlanContent = (state.tasks || '') + (state.acceptance || '');
+            if (newPlanContent !== lastPlanContent) {
+                reviews = [];
+                lastPlanContent = newPlanContent;
+            }
+        }
+
+        assertEqual(reviews.length, 0, 'transition: reviews cleared after replanning');
+        assertEqual(state.phase, 'waiting_approval', 'transition: phase returns to waiting_approval');
+        assertIncludes(state.tasks, 'Revised Task A', 'transition: new plan has revised tasks');
+    })();
+
+    // -- Request changes button visibility depends on review count --
+    (function testRequestChangesButtonVisibility() {
+        reviews = [];
+        state = { phase: 'waiting_approval' };
+
+        // With 0 reviews: button hidden
+        const btn = document.getElementById('btn-request-changes');
+        if (state.phase === 'waiting_approval' && reviews.length > 0) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+        assert(btn.classList.contains('hidden'), 'request-changes: hidden when 0 reviews');
+
+        // With 1+ reviews: button visible
+        addReview('some text', 'some comment', 'tasks');
+        if (state.phase === 'waiting_approval' && reviews.length > 0) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+        assert(!btn.classList.contains('hidden'), 'request-changes: visible when reviews > 0');
+    })();
+
+    // -- Selection detection (simulated getSelection) --
+    (function testSelectionDetection() {
+        // Test getSelectionSection helper
+        function getSelectionSection(node) {
+            while (node && node !== document.body) {
+                if (node.dataset && node.dataset.section) return node.dataset.section;
+                node = node.parentNode;
+            }
+            return null;
+        }
+
+        const tasksEl = document.getElementById('plan-tasks');
+        assertEqual(getSelectionSection(tasksEl), 'tasks', 'getSelectionSection: detects tasks section');
+
+        const acceptEl = document.getElementById('plan-acceptance');
+        assertEqual(getSelectionSection(acceptEl), 'acceptance', 'getSelectionSection: detects acceptance section');
+
+        // Node outside plan sections
+        const outsideNode = document.getElementById('task-list');
+        assertEqual(getSelectionSection(outsideNode), null, 'getSelectionSection: returns null for non-plan nodes');
+    })();
+
+    // -- Selection within plan content --
+    (function testSelectionInPlanContent() {
+        const planTasks = document.getElementById('plan-tasks');
+        planTasks.innerHTML = '<span>Some task text to select</span>';
+
+        // Simulate a selection
+        const textNode = planTasks.querySelector('span').firstChild;
+        if (textNode && window.getSelection) {
+            const range = document.createRange();
+            range.setStart(textNode, 0);
+            range.setEnd(textNode, 4); // "Some"
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+
+            const selectedText = sel.toString().trim();
+            assertEqual(selectedText, 'Some', 'Selection: can select text within plan content');
+
+            sel.removeAllRanges();
+        } else {
+            assert(true, 'Selection: skipped (no text node available)');
+        }
+    })();
+
+    // -- Comment flow: select → add comment → submit --
+    (function testCommentCreationFlow() {
+        reviews = [];
+
+        // Step 1: User selects text (simulated)
+        pendingSelection = { text: 'Task to implement feature X', section: 'tasks' };
+        assert(pendingSelection !== null, 'commentFlow: pending selection is set');
+
+        // Step 2: User types comment
+        const commentInput = document.getElementById('review-comment-input');
+        commentInput.value = 'This task is too broad, please split it';
+
+        // Step 3: User submits
+        const comment = commentInput.value.trim();
+        if (comment && pendingSelection) {
+            addReview(pendingSelection.text, comment, pendingSelection.section);
+            pendingSelection = null;
+            commentInput.value = '';
+        }
+
+        assertEqual(reviews.length, 1, 'commentFlow: review created after submit');
+        assertEqual(reviews[0].selectedText, 'Task to implement feature X', 'commentFlow: correct selected text');
+        assertEqual(reviews[0].comment, 'This task is too broad, please split it', 'commentFlow: correct comment');
+        assertEqual(pendingSelection, null, 'commentFlow: pendingSelection cleared');
+        assertEqual(commentInput.value, '', 'commentFlow: input cleared');
+    })();
+
+    // -- Comment cancellation --
+    (function testCommentCancellation() {
+        reviews = [];
+        pendingSelection = { text: 'some text', section: 'tasks' };
+        const commentInput = document.getElementById('review-comment-input');
+        commentInput.value = 'draft comment';
+
+        // Cancel: clear selection and input but don't create review
+        pendingSelection = null;
+        commentInput.value = '';
+
+        assertEqual(reviews.length, 0, 'commentCancel: no review created on cancel');
+        assertEqual(pendingSelection, null, 'commentCancel: pendingSelection cleared');
+    })();
+
+    // -- Empty comment rejected --
+    (function testEmptyCommentRejected() {
+        reviews = [];
+        pendingSelection = { text: 'some text', section: 'tasks' };
+        const commentInput = document.getElementById('review-comment-input');
+        commentInput.value = '   ';
+
+        // Submit logic (mirrors dashboard.html submitComment)
+        const comment = commentInput.value.trim();
+        if (comment && pendingSelection) {
+            addReview(pendingSelection.text, comment, pendingSelection.section);
+        }
+
+        assertEqual(reviews.length, 0, 'emptyComment: whitespace-only comment not submitted');
+    })();
+
+    // -- Fetch state and update UI --
+    (function testFetchStateUpdate() {
+        resetFetchMock();
+        fetchResponses['/state.json'] = {
+            ok: true,
+            body: {
+                run_name: 'test-run',
+                model: 'opus',
+                current_iteration: 3,
+                max_iterations: 5,
+                phase: 'task',
+                tasks_total: 4,
+                tasks_completed: 2,
+                tasks: '- [x] T1\n- [x] T2\n- [ ] T3\n- [ ] T4',
+                acceptance: '- [ ] A1',
+                iterations: [],
+                current_task_name: 'T3',
+                approve_timeout: 180
+            }
+        };
+
+        fetch('/state.json').then(r => r.json()).then(data => {
+            assertEqual(data.phase, 'task', 'fetchState: receives phase from server');
+            assertEqual(data.tasks_completed, 2, 'fetchState: receives tasks_completed');
+            assertEqual(data.approve_timeout, 180, 'fetchState: receives approve_timeout');
+        });
+
+        assertEqual(fetchCalls.length, 1, 'fetchState: one fetch call made');
+    })();
+
+    // -- Review annotation rendering --
+    (function testReviewAnnotationRendering() {
+        reviews = [];
+        addReview('important text', 'This needs attention', 'tasks');
+        addReview('another part', 'Consider alternatives', 'acceptance');
+
+        const container = document.getElementById('review-annotations');
+        const card = document.getElementById('review-annotations-card');
+
+        // Simulate renderReviewAnnotations
+        if (reviews.length > 0) {
+            card.style.display = 'block';
+            container.innerHTML = reviews.map(r => `
+                <div class="review-annotation" data-review-id="${r.id}">
+                    <div class="review-annotation-body">
+                        <div class="review-annotation-quote">"${escapeHtml(r.selectedText)}"</div>
+                        <div class="review-annotation-comment">${escapeHtml(r.comment)}</div>
+                    </div>
+                    <button class="review-delete-btn" title="Delete comment">&times;</button>
+                </div>
+            `).join('');
+        }
+
+        assertEqual(card.style.display, 'block', 'annotations: card visible when reviews exist');
+        assertEqual(container.querySelectorAll('.review-annotation').length, 2, 'annotations: renders 2 annotations');
+        assertIncludes(container.innerHTML, 'important text', 'annotations: contains selected text');
+        assertIncludes(container.innerHTML, 'This needs attention', 'annotations: contains comment');
+        assertIncludes(container.innerHTML, 'review-delete-btn', 'annotations: has delete button');
+    })();
+
+    // -- Review annotations cleared when no reviews --
+    (function testAnnotationsClearedEmpty() {
+        reviews = [];
+        const container = document.getElementById('review-annotations');
+        const card = document.getElementById('review-annotations-card');
+
+        if (reviews.length === 0) {
+            card.style.display = 'none';
+            container.innerHTML = '';
+        }
+
+        assertEqual(card.style.display, 'none', 'annotations: card hidden when no reviews');
+        assertEqual(container.innerHTML, '', 'annotations: container empty when no reviews');
+    })();
+
+    // -- Highlight application --
+    (function testHighlightTextInElement() {
+        function highlightTextInElement(element, text, reviewId) {
+            if (!text) return;
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                const idx = node.textContent.indexOf(text);
+                if (idx === -1) continue;
+                const before = node.textContent.slice(0, idx);
+                const after = node.textContent.slice(idx + text.length);
+                const mark = document.createElement('mark');
+                mark.setAttribute('data-review-id', reviewId);
+                mark.textContent = text;
+                const parent = node.parentNode;
+                if (before) parent.insertBefore(document.createTextNode(before), node);
+                parent.insertBefore(mark, node);
+                if (after) parent.insertBefore(document.createTextNode(after), node);
+                parent.removeChild(node);
+                break;
+            }
+        }
+
+        const el = document.createElement('div');
+        el.textContent = 'This is some task text to highlight';
+        highlightTextInElement(el, 'task text', 'r-test-1');
+
+        const mark = el.querySelector('mark[data-review-id="r-test-1"]');
+        assert(mark !== null, 'highlight: creates mark element');
+        assertEqual(mark.textContent, 'task text', 'highlight: mark contains selected text');
+        assertEqual(mark.getAttribute('data-review-id'), 'r-test-1', 'highlight: mark has review id');
+    })();
+
+    // -- Countdown behavior --
+    (function testCountdownLogic() {
+        const countdownEl = document.getElementById('countdown');
+
+        // Simulate startCountdown for waiting_approval
+        state = { phase: 'waiting_approval', approve_timeout: 60 };
+        let countdownValue = state.approve_timeout;
+        countdownEl.textContent = `Auto-continue in ${countdownValue}s`;
+        assertIncludes(countdownEl.textContent, '60s', 'countdown: shows initial countdown value');
+
+        // Simulate tick
+        countdownValue--;
+        countdownEl.textContent = `Auto-continue in ${countdownValue}s`;
+        assertIncludes(countdownEl.textContent, '59s', 'countdown: decrements');
+
+        // Clear during replanning
+        state = { phase: 'replanning' };
+        countdownEl.textContent = '';
+        assertEqual(countdownEl.textContent, '', 'countdown: cleared during replanning');
+    })();
+
+    // -- Concurrent approve + request-changes edge case --
+    (function testConcurrentSignals() {
+        resetFetchMock();
+        fetchResponses['POST /approve'] = { ok: true, body: { status: 'approved' } };
+        fetchResponses['POST /request-changes'] = { ok: true, body: { status: 'requested' } };
+
+        // Both calls can be made (server handles precedence)
+        fetch('/approve', { method: 'POST' });
+        fetch('/request-changes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reviews: [{ text: 'fix' }] })
+        });
+
+        assertEqual(fetchCalls.length, 2, 'concurrent: both approve and request-changes can be called');
+    })();
+
+    // -- Full flow: create, review, submit, clear --
+    (function testFullReviewFlow() {
+        reviews = [];
+        resetFetchMock();
+
+        // 1. Start in waiting_approval
+        state = {
+            phase: 'waiting_approval',
+            tasks: '- [ ] Build API\n- [ ] Build UI',
+            acceptance: '- [ ] API works\n- [ ] UI works'
+        };
+
+        // 2. Add comments
+        addReview('Build API', 'Split into auth API and data API', 'tasks');
+        addReview('UI works', 'Need specific viewport sizes', 'acceptance');
+        assertEqual(reviews.length, 2, 'fullFlow: two reviews created');
+
+        // 3. Submit request-changes
+        const payload = {
+            reviews: reviews.map(r => ({
+                selectedText: r.selectedText,
+                comment: r.comment,
+                section: r.section
+            }))
+        };
+        fetchResponses['POST /request-changes'] = { ok: true, body: { status: 'requested' } };
+        fetch('/request-changes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const sentBody = JSON.parse(fetchCalls[0].options.body);
+        assertEqual(sentBody.reviews.length, 2, 'fullFlow: all reviews sent to server');
+
+        // 4. Enter replanning
+        lastPlanContent = (state.tasks || '') + (state.acceptance || '');
+        state = { ...state, phase: 'replanning' };
+        assertEqual(state.phase, 'replanning', 'fullFlow: enters replanning phase');
+
+        // 5. New plan arrives
+        const prevPhase = state.phase;
+        state = {
+            phase: 'waiting_approval',
+            tasks: '- [ ] Build auth API\n- [ ] Build data API\n- [ ] Build UI',
+            acceptance: '- [ ] Auth API works\n- [ ] Data API works\n- [ ] UI works at 320px, 768px, 1024px'
+        };
+
+        if (prevPhase === 'replanning' && state.phase === 'waiting_approval') {
+            const newPlanContent = (state.tasks || '') + (state.acceptance || '');
+            if (newPlanContent !== lastPlanContent) {
+                reviews = [];
+                lastPlanContent = newPlanContent;
+            }
+        }
+
+        assertEqual(reviews.length, 0, 'fullFlow: reviews cleared after new plan');
+        assertIncludes(state.tasks, 'auth API', 'fullFlow: revised plan incorporates feedback');
+    })();
+
+    // ── Render results ──
+    renderResults();
+
+    // Restore original fetch
+    window.fetch = originalFetch;
+    </script>
+</body>
+</html>

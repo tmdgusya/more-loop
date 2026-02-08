@@ -40,6 +40,7 @@
         .badge.running { background: #238636; color: #fff; }
         .badge.waiting { background: #9e6a03; color: #fff; }
         .badge.done { background: #8957e5; color: #fff; }
+        .badge.replanning { background: #9e6a03; color: #fff; }
         .progress-bar {
             background: #21262d;
             height: 8px;
@@ -79,7 +80,33 @@
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         button.stop { background: #da3633; }
         button.stop:hover { background: #f85149; }
+        button.request-changes { background: #9e6a03; }
+        button.request-changes:hover { background: #bb8009; }
         button.hidden { display: none; }
+        .replanning-banner {
+            background: #1c2128;
+            border: 1px solid #9e6a03;
+            border-radius: 8px;
+            padding: 14px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #e3b341;
+            font-weight: 500;
+        }
+        .replanning-banner.hidden { display: none; }
+        .replanning-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #30363d;
+            border-top-color: #e3b341;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
         .countdown { color: #8b949e; font-size: 0.9rem; margin-left: auto; }
         .tabs {
             display: flex;
@@ -175,6 +202,163 @@
             line-height: 1.5;
             white-space: pre-wrap;
         }
+        .plan-section { margin-bottom: 24px; }
+        .plan-section h3 {
+            color: #58a6ff;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #30363d;
+        }
+        .plan-content {
+            font-size: 0.9rem;
+            line-height: 1.7;
+            color: #c9d1d9;
+        }
+        .plan-content h4 {
+            color: #d2a8ff;
+            margin: 16px 0 8px 0;
+            font-size: 0.95rem;
+        }
+        .plan-content ul { list-style: none; padding: 0; margin: 0; }
+        .plan-content ul li {
+            padding: 6px 0;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .plan-content ul li:last-child { border-bottom: none; }
+        .plan-content .plan-check {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            min-width: 16px;
+            border: 1px solid #30363d;
+            border-radius: 3px;
+            margin-top: 3px;
+            text-align: center;
+            line-height: 16px;
+            font-size: 11px;
+        }
+        .plan-content .plan-check.checked {
+            background: #238636;
+            border-color: #238636;
+            color: white;
+        }
+        .plan-content .plan-check.unchecked {
+            background: #21262d;
+        }
+        .plan-content p { margin: 6px 0; }
+        .plan-content .plan-text-line { padding: 2px 0; }
+        /* Review UI styles */
+        .review-float-btn {
+            position: absolute;
+            display: none;
+            background: #58a6ff;
+            color: #0d1117;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            white-space: nowrap;
+        }
+        .review-float-btn:hover { background: #79c0ff; }
+        .review-popover {
+            position: absolute;
+            display: none;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 12px;
+            z-index: 101;
+            width: 320px;
+            max-width: 90vw;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .review-popover .review-selected-preview {
+            background: #1c2128;
+            border-left: 3px solid #58a6ff;
+            padding: 6px 10px;
+            margin-bottom: 10px;
+            font-size: 0.8rem;
+            color: #8b949e;
+            max-height: 60px;
+            overflow: hidden;
+            border-radius: 0 4px 4px 0;
+        }
+        .review-popover textarea {
+            width: 100%;
+            background: #0d1117;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .review-popover textarea:focus { outline: none; border-color: #58a6ff; }
+        .review-popover-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .review-popover-actions button {
+            padding: 6px 14px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+        }
+        .review-popover-actions .review-cancel-btn {
+            background: #21262d;
+            color: #c9d1d9;
+        }
+        .review-popover-actions .review-cancel-btn:hover { background: #30363d; }
+        mark[data-review-id] {
+            background: rgba(88, 166, 255, 0.2);
+            color: #c9d1d9;
+            border-bottom: 2px solid #58a6ff;
+            padding: 1px 2px;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+        .review-annotation {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            background: #1c2128;
+            border: 1px solid #30363d;
+            border-left: 3px solid #58a6ff;
+            border-radius: 0 6px 6px 0;
+            padding: 10px 12px;
+            margin: 8px 0;
+            font-size: 0.85rem;
+        }
+        .review-annotation-body { flex: 1; }
+        .review-annotation-quote {
+            color: #8b949e;
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+            font-style: italic;
+        }
+        .review-annotation-comment { color: #c9d1d9; }
+        .review-delete-btn {
+            background: none;
+            border: none;
+            color: #f85149;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 0.9rem;
+            border-radius: 4px;
+            min-width: auto;
+        }
+        .review-delete-btn:hover { background: rgba(248, 81, 73, 0.15); }
         .phase-indicator {
             display: inline-flex;
             align-items: center;
@@ -220,12 +404,19 @@
 
         <div class="controls">
             <button id="btn-continue" class="hidden">Continue</button>
+            <button id="btn-request-changes" class="request-changes hidden">Request Changes</button>
             <button id="btn-stop" class="stop">Stop</button>
             <span class="countdown" id="countdown"></span>
         </div>
 
+        <div id="replanning-banner" class="replanning-banner hidden">
+            <span class="replanning-spinner"></span>
+            Re-planning based on your feedback...
+        </div>
+
         <div class="tabs">
             <div class="tab active" data-tab="tasks">Tasks</div>
+            <div class="tab" data-tab="plan">Plan</div>
             <div class="tab" data-tab="acceptance">Acceptance</div>
             <div class="tab" data-tab="history">History</div>
         </div>
@@ -234,6 +425,23 @@
             <div class="card">
                 <h2>Tasks (<span id="task-count">0/0</span>)</h2>
                 <ul class="task-list" id="task-list"></ul>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-plan">
+            <div class="card">
+                <div class="plan-section">
+                    <h3>Tasks</h3>
+                    <div class="plan-content" id="plan-tasks" data-section="tasks"></div>
+                </div>
+                <div class="plan-section">
+                    <h3>Acceptance Criteria</h3>
+                    <div class="plan-content" id="plan-acceptance" data-section="acceptance"></div>
+                </div>
+            </div>
+            <div class="card" id="review-annotations-card" style="display:none;">
+                <h2>Review Comments</h2>
+                <div id="review-annotations"></div>
             </div>
         </div>
 
@@ -249,6 +457,16 @@
                 <h2>Iteration History</h2>
                 <div id="iteration-list"></div>
             </div>
+        </div>
+    </div>
+
+    <button class="review-float-btn" id="review-float-btn">Add Comment</button>
+    <div class="review-popover" id="review-popover">
+        <div class="review-selected-preview" id="review-selected-preview"></div>
+        <textarea id="review-comment-input" placeholder="Enter your review comment..."></textarea>
+        <div class="review-popover-actions">
+            <button class="review-cancel-btn" id="review-cancel-btn">Cancel</button>
+            <button id="review-submit-btn">Submit</button>
         </div>
     </div>
 
@@ -270,6 +488,54 @@
                 }
             }
             return items;
+        }
+
+        function renderMarkdownAsHtml(md) {
+            if (!md) return '<p style="color:#8b949e;">No content yet</p>';
+            const lines = md.split('\n');
+            const parts = [];
+            let inList = false;
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    if (inList) { parts.push('</ul>'); inList = false; }
+                    continue;
+                }
+
+                // Headers (check ## before # to avoid false match)
+                const hMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
+                if (hMatch) {
+                    if (inList) { parts.push('</ul>'); inList = false; }
+                    parts.push(`<h4>${escapeHtml(hMatch[2])}</h4>`);
+                    continue;
+                }
+
+                // Checkbox items
+                const cb = trimmed.match(/^- \[(.)\]\s+(.*)$/);
+                if (cb) {
+                    if (!inList) { parts.push('<ul>'); inList = true; }
+                    const checked = cb[1] === 'x';
+                    const cls = checked ? 'checked' : 'unchecked';
+                    const mark = checked ? '&#10003;' : '';
+                    parts.push(`<li><span class="plan-check ${cls}">${mark}</span><span>${escapeHtml(cb[2])}</span></li>`);
+                    continue;
+                }
+
+                // Plain list items
+                const li = trimmed.match(/^[-*]\s+(.*)$/);
+                if (li) {
+                    if (!inList) { parts.push('<ul>'); inList = true; }
+                    parts.push(`<li><span>${escapeHtml(li[1])}</span></li>`);
+                    continue;
+                }
+
+                // Regular text
+                if (inList) { parts.push('</ul>'); inList = false; }
+                parts.push(`<div class="plan-text-line">${escapeHtml(trimmed)}</div>`);
+            }
+            if (inList) parts.push('</ul>');
+            return parts.join('\n');
         }
 
         function renderTaskList(items, container) {
@@ -312,6 +578,7 @@
             phaseEl.className = 'badge';
             if (state.phase === 'running' || state.phase === 'task') phaseEl.classList.add('running');
             else if (state.phase === 'waiting_approval') phaseEl.classList.add('waiting');
+            else if (state.phase === 'replanning') phaseEl.classList.add('replanning');
             else if (state.phase === 'done') phaseEl.classList.add('done');
 
             document.getElementById('pulse').style.display = state.phase === 'done' ? 'none' : 'block';
@@ -337,13 +604,32 @@
             const acceptance = parseMarkdownCheckboxes(state.acceptance);
             renderTaskList(acceptance, document.getElementById('acceptance-list'));
 
+            // Render plan tab with review highlights
+            applyReviewHighlights();
+
             renderIterations();
 
             const continueBtn = document.getElementById('btn-continue');
+            const requestChangesBtn = document.getElementById('btn-request-changes');
+            const replanningBanner = document.getElementById('replanning-banner');
+
             if (state.phase === 'waiting_approval') {
                 continueBtn.classList.remove('hidden');
+                // Show Request Changes button only when there are reviews
+                if (reviews.length > 0) {
+                    requestChangesBtn.classList.remove('hidden');
+                } else {
+                    requestChangesBtn.classList.add('hidden');
+                }
+                replanningBanner.classList.add('hidden');
+            } else if (state.phase === 'replanning') {
+                continueBtn.classList.add('hidden');
+                requestChangesBtn.classList.add('hidden');
+                replanningBanner.classList.remove('hidden');
             } else {
                 continueBtn.classList.add('hidden');
+                requestChangesBtn.classList.add('hidden');
+                replanningBanner.classList.add('hidden');
             }
         }
 
@@ -406,12 +692,22 @@
                 const res = await fetch('/state.json');
                 if (res.ok) {
                     const newState = await res.json();
-                    const wasWaiting = state && state.phase === 'waiting_approval';
+                    const prevPhase = state ? state.phase : null;
                     state = newState;
+
+                    // Detect plan change after replanning: clear reviews and reset countdown
+                    if (prevPhase === 'replanning' && state.phase === 'waiting_approval') {
+                        const newPlanContent = (state.tasks || '') + (state.acceptance || '');
+                        if (newPlanContent !== lastPlanContent) {
+                            reviews = [];
+                            lastPlanContent = newPlanContent;
+                        }
+                    }
+
                     updateUI();
 
                     // Start countdown when entering waiting_approval phase
-                    if (state.phase === 'waiting_approval' && !wasWaiting) {
+                    if (state.phase === 'waiting_approval' && prevPhase !== 'waiting_approval') {
                         startCountdown(state.approve_timeout || 180);
                     }
                 }
@@ -438,7 +734,42 @@
             }
         }
 
+        async function requestChanges() {
+            if (reviews.length === 0) return;
+            const payload = {
+                reviews: reviews.map(r => ({
+                    selectedText: r.selectedText,
+                    comment: r.comment,
+                    section: r.section
+                }))
+            };
+            try {
+                const res = await fetch('/request-changes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    // Track that we're waiting for a new plan
+                    lastPlanContent = (state.tasks || '') + (state.acceptance || '');
+                    // Hide buttons, show replanning state
+                    document.getElementById('btn-request-changes').classList.add('hidden');
+                    document.getElementById('btn-continue').classList.add('hidden');
+                    document.getElementById('replanning-banner').classList.remove('hidden');
+                    // Clear countdown during replanning
+                    if (countdownInterval) clearInterval(countdownInterval);
+                    document.getElementById('countdown').textContent = '';
+                }
+            } catch (e) {
+                console.error('Failed to request changes:', e);
+            }
+        }
+
+        // Track plan content to detect when new plan arrives after replanning
+        let lastPlanContent = '';
+
         document.getElementById('btn-continue').addEventListener('click', approve);
+        document.getElementById('btn-request-changes').addEventListener('click', requestChanges);
         document.getElementById('btn-stop').addEventListener('click', stop);
 
         document.querySelectorAll('.tab').forEach(tab => {
@@ -448,6 +779,233 @@
                 tab.classList.add('active');
                 document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
             });
+        });
+
+        // ── Review state management ──
+        let reviews = [];
+        let pendingSelection = null; // {text, section}
+
+        function generateReviewId() {
+            return 'r-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+        }
+
+        function addReview(selectedText, comment, section) {
+            reviews.push({
+                id: generateReviewId(),
+                selectedText: selectedText,
+                comment: comment,
+                section: section
+            });
+            applyReviewHighlights();
+            renderReviewAnnotations();
+        }
+
+        function deleteReview(id) {
+            reviews = reviews.filter(r => r.id !== id);
+            applyReviewHighlights();
+            renderReviewAnnotations();
+        }
+
+        // Re-render plan content and overlay highlights for stored reviews
+        function applyReviewHighlights() {
+            if (!state) return;
+            // Re-render clean content first
+            const tasksEl = document.getElementById('plan-tasks');
+            const acceptEl = document.getElementById('plan-acceptance');
+            tasksEl.innerHTML = renderMarkdownAsHtml(state.tasks);
+            acceptEl.innerHTML = renderMarkdownAsHtml(state.acceptance);
+
+            // Apply highlights for each review
+            for (const review of reviews) {
+                const container = review.section === 'tasks' ? tasksEl : acceptEl;
+                highlightTextInElement(container, review.selectedText, review.id);
+            }
+        }
+
+        function highlightTextInElement(element, text, reviewId) {
+            if (!text) return;
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                const idx = node.textContent.indexOf(text);
+                if (idx === -1) continue;
+
+                const before = node.textContent.slice(0, idx);
+                const after = node.textContent.slice(idx + text.length);
+
+                const mark = document.createElement('mark');
+                mark.setAttribute('data-review-id', reviewId);
+                mark.textContent = text;
+
+                const parent = node.parentNode;
+                if (before) parent.insertBefore(document.createTextNode(before), node);
+                parent.insertBefore(mark, node);
+                if (after) parent.insertBefore(document.createTextNode(after), node);
+                parent.removeChild(node);
+                break; // Only highlight first occurrence
+            }
+        }
+
+        function renderReviewAnnotations() {
+            const container = document.getElementById('review-annotations');
+            const card = document.getElementById('review-annotations-card');
+            const requestChangesBtn = document.getElementById('btn-request-changes');
+
+            // Toggle Request Changes button based on review count
+            if (state && state.phase === 'waiting_approval' && reviews.length > 0) {
+                requestChangesBtn.classList.remove('hidden');
+            } else {
+                requestChangesBtn.classList.add('hidden');
+            }
+
+            if (reviews.length === 0) {
+                card.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+
+            card.style.display = 'block';
+            container.innerHTML = reviews.map(r => `
+                <div class="review-annotation" data-review-id="${r.id}">
+                    <div class="review-annotation-body">
+                        <div class="review-annotation-quote">"${escapeHtml(r.selectedText.length > 80 ? r.selectedText.slice(0, 80) + '...' : r.selectedText)}"</div>
+                        <div class="review-annotation-comment">${escapeHtml(r.comment)}</div>
+                    </div>
+                    <button class="review-delete-btn" onclick="deleteReview('${r.id}')" title="Delete comment">&times;</button>
+                </div>
+            `).join('');
+        }
+
+        // ── Text selection detection ──
+        function getSelectionSection(node) {
+            while (node && node !== document.body) {
+                if (node.dataset && node.dataset.section) return node.dataset.section;
+                node = node.parentNode;
+            }
+            return null;
+        }
+
+        function handlePlanSelection(e) {
+            if (!state || state.phase !== 'waiting_approval') return;
+
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+                hideFloatBtn();
+                return;
+            }
+
+            const selectedText = sel.toString().trim();
+            if (!selectedText) { hideFloatBtn(); return; }
+
+            // Check if selection is within plan content
+            const anchorSection = getSelectionSection(sel.anchorNode);
+            const focusSection = getSelectionSection(sel.focusNode);
+            if (!anchorSection || anchorSection !== focusSection) {
+                hideFloatBtn();
+                return;
+            }
+
+            pendingSelection = { text: selectedText, section: anchorSection };
+
+            // Position floating button near selection
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const btn = document.getElementById('review-float-btn');
+            btn.style.top = (window.scrollY + rect.top - 36) + 'px';
+            btn.style.left = (window.scrollX + rect.left + rect.width / 2 - 50) + 'px';
+            btn.style.display = 'block';
+        }
+
+        function hideFloatBtn() {
+            document.getElementById('review-float-btn').style.display = 'none';
+            pendingSelection = null;
+        }
+
+        function hidePopover() {
+            document.getElementById('review-popover').style.display = 'none';
+            document.getElementById('review-comment-input').value = '';
+        }
+
+        function showCommentPopover() {
+            if (!pendingSelection) return;
+
+            const btn = document.getElementById('review-float-btn');
+            const popover = document.getElementById('review-popover');
+            const preview = document.getElementById('review-selected-preview');
+
+            preview.textContent = pendingSelection.text.length > 120
+                ? pendingSelection.text.slice(0, 120) + '...'
+                : pendingSelection.text;
+
+            // Position popover where the float button was
+            popover.style.top = btn.style.top;
+            popover.style.left = btn.style.left;
+            popover.style.display = 'block';
+            btn.style.display = 'none';
+
+            // Clear any text selection
+            window.getSelection().removeAllRanges();
+
+            document.getElementById('review-comment-input').focus();
+        }
+
+        function submitComment() {
+            const input = document.getElementById('review-comment-input');
+            const comment = input.value.trim();
+            if (!comment || !pendingSelection) return;
+
+            addReview(pendingSelection.text, comment, pendingSelection.section);
+            pendingSelection = null;
+            hidePopover();
+        }
+
+        // Event listeners for review UI
+        document.getElementById('review-float-btn').addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showCommentPopover();
+        });
+
+        document.getElementById('review-cancel-btn').addEventListener('click', function(e) {
+            e.preventDefault();
+            hidePopover();
+            pendingSelection = null;
+        });
+
+        document.getElementById('review-submit-btn').addEventListener('click', function(e) {
+            e.preventDefault();
+            submitComment();
+        });
+
+        // Submit on Enter (Shift+Enter for newline)
+        document.getElementById('review-comment-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitComment();
+            }
+        });
+
+        // Listen for text selection via mouseup and touchend on plan tab
+        document.getElementById('tab-plan').addEventListener('mouseup', function(e) {
+            // Small delay to let the selection finalize
+            setTimeout(() => handlePlanSelection(e), 10);
+        });
+
+        document.getElementById('tab-plan').addEventListener('touchend', function(e) {
+            setTimeout(() => handlePlanSelection(e), 100);
+        });
+
+        // Hide float button when clicking elsewhere
+        document.addEventListener('mousedown', function(e) {
+            const floatBtn = document.getElementById('review-float-btn');
+            const popover = document.getElementById('review-popover');
+            if (!floatBtn.contains(e.target) && !popover.contains(e.target)) {
+                hideFloatBtn();
+            }
+            if (!popover.contains(e.target) && popover.style.display === 'block'
+                && !floatBtn.contains(e.target)) {
+                hidePopover();
+            }
         });
 
         pollInterval = setInterval(fetchState, 2000);
