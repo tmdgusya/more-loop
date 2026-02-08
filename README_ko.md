@@ -110,12 +110,14 @@ more-loop --resume .more-loop/my-project -n 8 -v
 # 기존 run directory 확인
 ls .more-loop/
 
-# 이어하기 — bootstrap 스킵, 마지막 완료 iteration 다음부터 시작
+# 이어하기 — bootstrap 스킵, 10회 추가 iteration 실행
 more-loop --resume .more-loop/my-project -n 10
 
 # verify 파일과 함께 이어하기
 more-loop --resume .more-loop/my-project -n 10 verify.sh
 ```
+
+resume 시 `-n`은 **추가 iteration 횟수**입니다 (총 횟수가 아님). `-n 10`이면 이전 실행이 멈춘 지점에서 10회 더 실행합니다.
 
 `--resume`은 run directory의 `tasks.md`, `acceptance.md`, `iterations/*.md`를 읽어 진행 상황을 파악합니다. `-n`, `-m`, `-v` 같은 옵션은 이어할 때 새로 지정 가능합니다.
 

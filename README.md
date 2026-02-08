@@ -110,12 +110,14 @@ If a run is interrupted (Ctrl+C, error, etc.), you can resume from where it left
 # Check existing run directories
 ls .more-loop/
 
-# Resume — skips bootstrap, continues from last completed iteration
+# Resume — skips bootstrap, runs 10 MORE iterations from where it left off
 more-loop --resume .more-loop/my-project -n 10
 
 # Resume with verify file
 more-loop --resume .more-loop/my-project -n 10 verify.sh
 ```
+
+When resuming, `-n` means **additional iterations** (not total). So `-n 10` runs 10 more iterations from where the previous run stopped.
 
 `--resume` reads `tasks.md`, `acceptance.md`, and `iterations/*.md` from the run directory to determine progress. Options like `-n`, `-m`, `-v` can be changed on resume.
 

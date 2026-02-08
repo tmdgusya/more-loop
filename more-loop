@@ -979,9 +979,11 @@ main() {
   if [[ -n "$RESUME_DIR" ]]; then
     resume_run_dir
     start_iter="$RESUME_FROM"
+    # -n means additional iterations when resuming
+    MAX_ITERATIONS=$(( start_iter + MAX_ITERATIONS - 1 ))
     local remaining
     remaining="$(count_remaining)"
-    log "Resuming more-loop: ${MAX_ITERATIONS} iterations, model=${MODEL}"
+    log "Resuming more-loop: iterations ${start_iter}–${MAX_ITERATIONS}, model=${MODEL}"
     log "Run directory: ${RUN_DIR}"
     log "Resuming from iteration ${start_iter} — ${remaining} tasks remaining"
   else
@@ -994,6 +996,11 @@ main() {
   # Start web server if --web flag is set
   if [[ "$WEB_MODE" == "true" ]]; then
     start_web_server
+  fi
+
+  # Write initial state before bootstrap
+  if [[ "$WEB_MODE" == "true" ]] || [[ "$APPROVE_MODE" == "true" ]]; then
+    write_state_json "bootstrap" ""
   fi
 
   # Bootstrap phase (skip on resume)
