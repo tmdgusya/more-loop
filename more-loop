@@ -887,10 +887,11 @@ run_task_fix_iteration() {
   acceptance="$(cat "${RUN_DIR}/acceptance.md")"
 
   # Get the most recent verify failure details
+  # The verify for this iteration was just run (same iter number)
   local verify_feedback=""
-  local prev_verify="${RUN_DIR}/iterations/$((iter - 1))-verify.md"
-  if [[ -f "$prev_verify" ]]; then
-    verify_feedback="$(cat "$prev_verify")"
+  local cur_verify="${RUN_DIR}/iterations/${iter}-verify.md"
+  if [[ -f "$cur_verify" ]]; then
+    verify_feedback="$(cat "$cur_verify")"
   fi
 
   maybe_write_state "task" "fix: verify failures"
