@@ -1,5 +1,9 @@
 # BOOTSTRAP PROTOCOL
 
+## FIRST: Read Project Context
+
+Before doing anything, read ALL `CLAUDE.md` and `AGENTS.md` files in the working directory and its subdirectories. These contain project-specific instructions, coding standards, and architectural decisions that you MUST follow.
+
 ## HARD CONSTRAINT: TASK COUNT
 
 Generate NO MORE THAN {max_tasks} tasks.

@@ -1,5 +1,9 @@
 # IMPROVEMENT PROTOCOL
 
+## FIRST: Read Project Context
+
+Before doing anything, read ALL `CLAUDE.md` and `AGENTS.md` files in the working directory and its subdirectories. These contain project-specific instructions, coding standards, and architectural decisions that you MUST follow.
+
 All planned tasks are complete. Make ONE targeted improvement.
 
 1. Choose the SINGLE most impactful improvement
