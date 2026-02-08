@@ -135,6 +135,7 @@ model = sys.argv[4]
 max_iterations = int(sys.argv[5])
 current_iteration = int(sys.argv[6])
 started_at = sys.argv[7]
+approve_timeout = int(sys.argv[8])
 
 updated_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 if not started_at:
@@ -202,11 +203,12 @@ state = {
     'current_task_name': current_task,
     'started_at': started_at,
     'updated_at': updated_at,
+    'approve_timeout': approve_timeout,
 }
 
 with open(os.path.join(run_dir, 'state.json'), 'w') as f:
     json.dump(state, f, indent=2, ensure_ascii=False)
-" "$RUN_DIR" "$phase" "$current_task" "$MODEL" "$MAX_ITERATIONS" "$CURRENT_ITERATION" "$started_at"
+" "$RUN_DIR" "$phase" "$current_task" "$MODEL" "$MAX_ITERATIONS" "$CURRENT_ITERATION" "$started_at" "$APPROVE_TIMEOUT"
 }
 
 # Helper: write state only if web or approve mode is enabled
@@ -484,6 +486,100 @@ EOF
   maybe_write_state "bootstrap"
 }
 
+rebootstrap() {
+  local reviews_json="$1"
+  log "[re-bootstrap] Revising plan based on review feedback"
+
+  maybe_write_state "replanning"
+
+  # Calculate max_tasks
+  local max_tasks="${MAX_TASKS}"
+  if [[ -z "$max_tasks" ]]; then
+    max_tasks="$MAX_ITERATIONS"
+  fi
+  if [[ "$max_tasks" -gt "$MAX_ITERATIONS" ]]; then
+    max_tasks="$MAX_ITERATIONS"
+  fi
+
+  local spec
+  spec="$(cat "$PROMPT_FILE")"
+
+  local current_tasks=""
+  if [[ -f "${RUN_DIR}/tasks.md" ]]; then
+    current_tasks="$(cat "${RUN_DIR}/tasks.md")"
+  fi
+  local current_acceptance=""
+  if [[ -f "${RUN_DIR}/acceptance.md" ]]; then
+    current_acceptance="$(cat "${RUN_DIR}/acceptance.md")"
+  fi
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt bootstrap)"
+  sys_prompt="${sys_prompt//\{max_tasks\}/$max_tasks}"
+
+  local prompt
+  prompt="$(cat <<EOF
+You are re-bootstrapping an iterative development process based on review feedback.
+
+The reviewer has requested changes to the plan. Revise the tasks and acceptance criteria
+based on their feedback while preserving the original spec intent.
+
+## Original spec:
+${spec}
+
+## Current tasks.md:
+${current_tasks}
+
+## Current acceptance.md:
+${current_acceptance}
+
+## Review feedback (JSON):
+${reviews_json}
+
+## Instructions:
+1. Read the review comments carefully
+2. Revise \`tasks.md\` and \`acceptance.md\` based on the feedback
+3. Write both files to: ${RUN_DIR}/
+4. All tasks should be \`- [ ]\` checkboxes (unchecked)
+5. Generate NO MORE THAN ${max_tasks} tasks
+6. Preserve any aspects of the plan that weren't criticized
+EOF
+)"
+
+  local output
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
+    log_fail "Re-bootstrap failed"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/0-rebootstrap.md"
+
+  # Validate files were created
+  if [[ ! -f "${RUN_DIR}/acceptance.md" || ! -f "${RUN_DIR}/tasks.md" ]]; then
+    log_fail "Re-bootstrap failed: missing output files"
+    return 1
+  fi
+
+  # Enforce max tasks
+  local task_count
+  task_count="$(grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" 2>/dev/null || true)"
+  if [[ "$task_count" -gt "$max_tasks" ]]; then
+    log_warn "enforce_max_tasks: Re-bootstrap generated ${task_count} tasks, truncating to ${max_tasks}"
+    local cut_line
+    cut_line="$(grep -n '^\- \[ \]' "${RUN_DIR}/tasks.md" | sed -n "$((max_tasks + 1))p" | cut -d: -f1)"
+    if [[ -n "$cut_line" ]]; then
+      head -n "$((cut_line - 1))" "${RUN_DIR}/tasks.md" > "${RUN_DIR}/tasks.md.tmp"
+      mv "${RUN_DIR}/tasks.md.tmp" "${RUN_DIR}/tasks.md"
+    fi
+  fi
+
+  # Clean up reviews file after processing
+  rm -f "${RUN_DIR}/reviews.json"
+
+  log_pass "[re-bootstrap] Revised plan — $(grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" || true) tasks"
+  maybe_write_state "bootstrap"
+}
+
 count_remaining() {
   if [[ -f "${RUN_DIR}/tasks.md" ]]; then
     grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" || true
@@ -586,7 +682,9 @@ run_verify() {
 
   if [[ "$verify_ext" == "sh" ]]; then
     # Run shell script verification
-    result="$(bash "$VERIFY_FILE" 2>&1)" || rc=$?
+    # Run in separate process group (setsid) so verify scripts that
+    # do "kill 0" in traps don't kill the more-loop process
+    result="$(setsid bash "$VERIFY_FILE" 2>&1)" || rc=$?
 
     if [[ $rc -eq 0 ]]; then
       log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
@@ -872,6 +970,28 @@ check_stop_signal() {
   [[ -f "${RUN_DIR}/.signal-stop" ]]
 }
 
+handle_request_changes() {
+  local request_changes_file="${RUN_DIR}/.signal-request-changes"
+  local reviews_file="${RUN_DIR}/reviews.json"
+
+  rm -f "$request_changes_file"
+  log ""
+  log_warn "Review changes requested, re-planning..."
+
+  # Read reviews
+  local reviews_json="[]"
+  if [[ -f "$reviews_file" ]]; then
+    reviews_json="$(cat "$reviews_file")"
+  fi
+
+  # Re-bootstrap with review feedback
+  if rebootstrap "$reviews_json"; then
+    log_pass "Plan revised successfully"
+  else
+    log_fail "Re-bootstrap failed, keeping original plan"
+  fi
+}
+
 wait_for_approval() {
   local context="$1"  # "bootstrap" or "iteration"
 
@@ -879,6 +999,7 @@ wait_for_approval() {
   maybe_write_state "waiting_approval"
 
   local approve_file="${RUN_DIR}/.signal-approve"
+  local request_changes_file="${RUN_DIR}/.signal-request-changes"
   local timeout="${APPROVE_TIMEOUT}"
 
   # Handle infinite timeout (0)
@@ -913,6 +1034,17 @@ wait_for_approval() {
         log_pass "Approved via dashboard, continuing..."
         log ""
         return 0
+      fi
+
+      # Check for request-changes signal
+      if [[ -f "$request_changes_file" ]]; then
+        handle_request_changes
+        # Reset timeout and continue waiting for approval
+        elapsed=0
+        maybe_write_state "waiting_approval"
+        log ""
+        log "Waiting for approval of revised plan..."
+        continue
       fi
 
       # Restart web server if it died
@@ -950,6 +1082,18 @@ wait_for_approval() {
         log_warn "Stop signal received, exiting..."
         rm -f "${RUN_DIR}/.signal-stop"
         return 1
+      fi
+
+      # Check for request-changes signal
+      if [[ -f "$request_changes_file" ]]; then
+        echo "" >&2
+        handle_request_changes
+        # Reset timeout and continue waiting
+        remaining=$timeout
+        maybe_write_state "waiting_approval"
+        echo "" >&2
+        echo "Press Enter to continue, or Ctrl+C to stop..." >&2
+        continue
       fi
 
       # Read with timeout (1 second increments)
