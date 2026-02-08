@@ -12,12 +12,15 @@ You are helping the user create a **verification file** for use with `more-loop`
 
 ## How more-loop uses verification files
 
-After each task iteration, more-loop runs the verification file to check if the task was completed correctly:
+Verification runs at two points with different roles:
 
-- **Shell script (`.sh`)**: Executed with `bash`. Exit code 0 = PASS, non-zero = FAIL. Stdout/stderr is captured as feedback.
+1. **During task iterations** — verify runs after each task as **informational feedback**. Results are logged and passed to the next iteration, but failures do NOT roll back task completion. Tasks always progress forward.
+2. **After all tasks complete** — verify becomes a **gate**. If it fails, more-loop enters "fix mode" where Claude sees the failure details and iterates on fixes until verify passes or iterations run out.
+
+- **Shell script (`.sh`)**: Executed with `bash` in a separate process group. Exit code 0 = PASS, non-zero = FAIL. Stdout/stderr is captured as feedback.
 - **Markdown (`.md`)**: Fed to a fresh `claude -p` process that evaluates the checklist against the current codebase state and outputs PASS or FAIL with reasoning.
 
-If verification **fails**, more-loop reverts the task checkbox and retries on the next iteration with the failure feedback appended.
+Since `.sh` verify files are the **final acceptance gate**, they should be comprehensive and test the complete deliverable.
 
 ## Your process
 
@@ -72,7 +75,7 @@ echo "=== All checks passed ==="
 Guidelines:
 - Prefer existing project commands (`npm test`, `make check`, `pytest`, etc.)
 - Include a syntax/build check before running tests
-- Keep it fast — verification runs after every iteration
+- Keep it reasonably fast — verification runs after every iteration and as the final gate
 - Don't check things that are subjective or hard to automate — use a `.md` file for those
 
 ## Markdown checklist format (`.md`)

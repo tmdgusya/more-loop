@@ -599,23 +599,18 @@ run_task_iteration() {
   local task_name
   task_name="$(get_next_task_name)"
 
-  local retry_info=""
+  # Include previous verify feedback (informational, not blocking)
+  local verify_info=""
   if [[ -f "${RUN_DIR}/iterations/$((iter - 1))-verify.md" ]]; then
     local prev_verify
     prev_verify="$(cat "${RUN_DIR}/iterations/$((iter - 1))-verify.md")"
     if echo "$prev_verify" | grep -qi "FAIL"; then
-      retry_info="The previous attempt FAILED. Here is the verification feedback:
+      verify_info="Note: The previous iteration's verification had failures (this is expected during incremental development — not all features are implemented yet). If any failures are relevant to YOUR task, address them:
 
-${prev_verify}
-
-Fix the issues before proceeding."
-      log_warn "[${iter}/${MAX_ITERATIONS}] Retry: \"${task_name}\" — ${remaining} tasks remaining"
-    else
-      log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
+${prev_verify}"
     fi
-  else
-    log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
   fi
+  log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
 
   maybe_write_state "task" "$task_name"
 
@@ -644,7 +639,7 @@ ${acceptance}
 
 ${prev_summary}
 
-${retry_info}
+${verify_info}
 
 ## Instructions:
 1. Pick the NEXT unchecked task (\`- [ ]\`) from tasks.md
@@ -874,6 +869,61 @@ EOF
   local output
   if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
     log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during improve iteration"
+    echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/${iter}.md"
+}
+
+run_task_fix_iteration() {
+  local iter="$1"
+
+  log "[${iter}/${MAX_ITERATIONS}] Fix mode — verify failed, addressing issues"
+
+  local tasks
+  tasks="$(cat "${RUN_DIR}/tasks.md")"
+  local acceptance
+  acceptance="$(cat "${RUN_DIR}/acceptance.md")"
+
+  # Get the most recent verify failure details
+  local verify_feedback=""
+  local prev_verify="${RUN_DIR}/iterations/$((iter - 1))-verify.md"
+  if [[ -f "$prev_verify" ]]; then
+    verify_feedback="$(cat "$prev_verify")"
+  fi
+
+  maybe_write_state "task" "fix: verify failures"
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt task)"
+
+  local prompt
+  prompt="$(cat <<EOF
+You are in FIX mode. All tasks are marked complete but verification is failing.
+
+## Completed tasks:
+${tasks}
+
+## Acceptance criteria:
+${acceptance}
+
+## Verification failure details:
+${verify_feedback}
+
+## Instructions:
+1. Read the verification failure output carefully
+2. Fix ONLY the issues that are causing verification to fail
+3. Do NOT modify tasks.md — all tasks are already complete
+4. Write a brief summary of what you fixed to stdout
+
+Focus on making the verify pass. Do not refactor or improve unrelated code.
+EOF
+)"
+
+  local output
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
+    log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during fix iteration"
     echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
     return 1
   fi
@@ -1183,24 +1233,25 @@ main() {
     maybe_write_state "iteration_start"
 
     if [[ "$remaining" -gt 0 ]]; then
-      # Task mode — snapshot before, enforce after, rollback on verify fail
+      # Task mode — snapshot for enforce_single_task only
       cp "${RUN_DIR}/tasks.md" "${RUN_DIR}/.tasks-snapshot.md"
       run_task_iteration "$iter" || true
       enforce_single_task "${RUN_DIR}/.tasks-snapshot.md"
-
-      # Verify
-      if ! run_verify "$iter"; then
-        # Verification failed — restore tasks.md to pre-iteration state
-        # Code changes remain (no git rollback) but checkboxes are fully reverted
-        cp "${RUN_DIR}/.tasks-snapshot.md" "${RUN_DIR}/tasks.md"
-      fi
       rm -f "${RUN_DIR}/.tasks-snapshot.md"
-    else
-      # Improvement mode
-      run_improve_iteration "$iter" || true
 
-      # Verify improvements too
+      # Verify — informational only, no rollback
+      # Results are logged and fed to next iteration as feedback
       run_verify "$iter" || true
+    else
+      # All tasks done — verify is now a gate
+      if run_verify "$iter"; then
+        # Verify passed — enter improvement mode
+        run_improve_iteration "$iter" || true
+      else
+        # Verify failed — enter fix mode (Claude sees failure feedback)
+        log_warn "Verify failed after all tasks — entering fix iteration"
+        run_task_fix_iteration "$iter" || true
+      fi
     fi
 
     # Approval checkpoint after each iteration (only if --approve-every)
