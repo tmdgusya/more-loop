@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>more-loop Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        header h1 { color: #58a6ff; font-size: 1.5rem; margin-bottom: 10px; }
+        .header-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            font-size: 0.9rem;
+            color: #8b949e;
+        }
+        .header-info span { display: flex; align-items: center; gap: 6px; }
+        .badge {
+            background: #21262d;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .badge.running { background: #238636; color: #fff; }
+        .badge.waiting { background: #9e6a03; color: #fff; }
+        .badge.done { background: #8957e5; color: #fff; }
+        .progress-bar {
+            background: #21262d;
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 15px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #238636, #2ea043);
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .controls {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2ea043; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.stop { background: #da3633; }
+        button.stop:hover { background: #f85149; }
+        button.hidden { display: none; }
+        .countdown { color: #8b949e; font-size: 0.9rem; margin-left: auto; }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #30363d;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #8b949e;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #c9d1d9; }
+        .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h2 { color: #c9d1d9; font-size: 1.1rem; margin-bottom: 15px; }
+        .task-list { list-style: none; }
+        .task-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .task-list li:last-child { border-bottom: none; }
+        .task-list input[type="checkbox"] {
+            margin-top: 4px;
+            width: 16px;
+            height: 16px;
+            accent-color: #238636;
+        }
+        .task-list label { flex: 1; }
+        .task-list input:checked + label {
+            text-decoration: line-through;
+            color: #8b949e;
+        }
+        .iteration-card {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        .iteration-header {
+            padding: 15px;
+            background: #161b22;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .iteration-header:hover { background: #1c2128; }
+        .iteration-content {
+            padding: 15px;
+            display: none;
+            border-top: 1px solid #30363d;
+        }
+        .iteration-content.expanded { display: block; }
+        .status-pass { color: #3fb950; }
+        .status-fail { color: #f85149; }
+        .status-skip { color: #8b949e; }
+        .timestamp { color: #6e7681; font-size: 0.85rem; }
+        .current-task {
+            margin-top: 12px;
+            padding: 10px 15px;
+            background: #1c2128;
+            border-left: 3px solid #58a6ff;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.9rem;
+            color: #c9d1d9;
+        }
+        .current-task::before {
+            content: "Current: ";
+            color: #8b949e;
+            font-weight: 500;
+        }
+        pre {
+            background: #0d1117;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .phase-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background: #238636;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .header-info { flex-direction: column; gap: 10px; }
+            .controls { flex-direction: column; align-items: stretch; }
+            .countdown { margin-left: 0; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 id="run-name">Loading...</h1>
+            <div class="header-info">
+                <span>Model: <span id="model" class="badge">-</span></span>
+                <span>Iteration: <span id="iteration" class="badge">-</span></span>
+                <span class="phase-indicator">
+                    <span class="pulse" id="pulse"></span>
+                    <span id="phase" class="badge">-</span>
+                </span>
+                <span id="updated" class="timestamp"></span>
+            </div>
+            <div id="current-task" class="current-task" style="display: none;"></div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress" style="width: 0%"></div>
+            </div>
+        </header>
+
+        <div class="controls">
+            <button id="btn-continue" class="hidden">Continue</button>
+            <button id="btn-stop" class="stop">Stop</button>
+            <span class="countdown" id="countdown"></span>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="tasks">Tasks</div>
+            <div class="tab" data-tab="acceptance">Acceptance</div>
+            <div class="tab" data-tab="history">History</div>
+        </div>
+
+        <div class="tab-content active" id="tab-tasks">
+            <div class="card">
+                <h2>Tasks (<span id="task-count">0/0</span>)</h2>
+                <ul class="task-list" id="task-list"></ul>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-acceptance">
+            <div class="card">
+                <h2>Acceptance Criteria</h2>
+                <ul class="task-list" id="acceptance-list"></ul>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-history">
+            <div class="card">
+                <h2>Iteration History</h2>
+                <div id="iteration-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let state = null;
+        let pollInterval = null;
+
+        function parseMarkdownCheckboxes(md) {
+            if (!md) return [];
+            const lines = md.split('\n');
+            const items = [];
+            for (const line of lines) {
+                const match = line.match(/^- \[(.)\] (.*)$/);
+                if (match) {
+                    items.push({
+                        checked: match[1] === 'x',
+                        text: match[2]
+                    });
+                }
+            }
+            return items;
+        }
+
+        function renderTaskList(items, container) {
+            container.innerHTML = items.map((item, i) => `
+                <li>
+                    <input type="checkbox" ${item.checked ? 'checked' : ''} disabled id="cb-${i}">
+                    <label for="cb-${i}">${escapeHtml(item.text)}</label>
+                </li>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTimeAgo(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+            if (seconds < 60) return 'just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes} min ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} hour ago`;
+            return `${Math.floor(hours / 24)} days ago`;
+        }
+
+        function updateUI() {
+            if (!state) return;
+
+            document.getElementById('run-name').textContent = state.run_name || 'Unknown Run';
+            document.getElementById('model').textContent = state.model || '-';
+            document.getElementById('iteration').textContent = `${state.current_iteration || 0}/${state.max_iterations || 0}`;
+
+            const phaseEl = document.getElementById('phase');
+            phaseEl.textContent = state.phase || 'unknown';
+            phaseEl.className = 'badge';
+            if (state.phase === 'running' || state.phase === 'task') phaseEl.classList.add('running');
+            else if (state.phase === 'waiting_approval') phaseEl.classList.add('waiting');
+            else if (state.phase === 'done') phaseEl.classList.add('done');
+
+            document.getElementById('pulse').style.display = state.phase === 'done' ? 'none' : 'block';
+            document.getElementById('updated').textContent = formatTimeAgo(state.updated_at);
+
+            // Update current task display
+            const currentTaskEl = document.getElementById('current-task');
+            if (state.current_task_name && state.current_task_name.trim() !== '') {
+                currentTaskEl.textContent = state.current_task_name;
+                currentTaskEl.style.display = 'block';
+            } else {
+                currentTaskEl.style.display = 'none';
+            }
+
+            const progress = state.tasks_total > 0 ? (state.tasks_completed / state.tasks_total * 100) : 0;
+            document.getElementById('progress').style.width = `${progress}%`;
+
+            document.getElementById('task-count').textContent = `${state.tasks_completed || 0}/${state.tasks_total || 0}`;
+
+            const tasks = parseMarkdownCheckboxes(state.tasks);
+            renderTaskList(tasks, document.getElementById('task-list'));
+
+            const acceptance = parseMarkdownCheckboxes(state.acceptance);
+            renderTaskList(acceptance, document.getElementById('acceptance-list'));
+
+            renderIterations();
+
+            const continueBtn = document.getElementById('btn-continue');
+            if (state.phase === 'waiting_approval') {
+                continueBtn.classList.remove('hidden');
+            } else {
+                continueBtn.classList.add('hidden');
+            }
+        }
+
+        function renderIterations() {
+            const container = document.getElementById('iteration-list');
+            if (!state.iterations || state.iterations.length === 0) {
+                container.innerHTML = '<p class="timestamp">No iterations yet</p>';
+                return;
+            }
+
+            container.innerHTML = state.iterations.map(iter => {
+                let statusClass = 'status-skip';
+                let statusText = iter.verify_result || 'PENDING';
+                if (iter.verify_result === 'PASS') statusClass = 'status-pass';
+                if (iter.verify_result === 'FAIL') statusClass = 'status-fail';
+
+                return `
+                    <div class="iteration-card">
+                        <div class="iteration-header" onclick="this.nextElementSibling.classList.toggle('expanded')">
+                            <span>Iteration ${iter.number}</span>
+                            <span class="${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="iteration-content">
+                            <pre>${escapeHtml(iter.summary || iter.verify_detail || 'No details')}</pre>
+                        </div>
+                    </div>
+                `;
+            }).reverse().join('');
+        }
+
+        let countdownInterval = null;
+        let countdownValue = 0;
+
+        function startCountdown(seconds) {
+            countdownValue = seconds;
+            if (countdownInterval) clearInterval(countdownInterval);
+
+            const countdownEl = document.getElementById('countdown');
+
+            if (seconds <= 0 || state.phase !== 'waiting_approval') {
+                countdownEl.textContent = '';
+                return;
+            }
+
+            countdownEl.textContent = `Auto-continue in ${countdownValue}s`;
+
+            countdownInterval = setInterval(() => {
+                countdownValue--;
+                if (countdownValue <= 0) {
+                    countdownEl.textContent = 'Auto-continuing...';
+                    clearInterval(countdownInterval);
+                } else {
+                    countdownEl.textContent = `Auto-continue in ${countdownValue}s`;
+                }
+            }, 1000);
+        }
+
+        async function fetchState() {
+            try {
+                const res = await fetch('/state.json');
+                if (res.ok) {
+                    const newState = await res.json();
+                    const wasWaiting = state && state.phase === 'waiting_approval';
+                    state = newState;
+                    updateUI();
+
+                    // Start countdown when entering waiting_approval phase
+                    if (state.phase === 'waiting_approval' && !wasWaiting) {
+                        startCountdown(state.approve_timeout || 180);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to fetch state:', e);
+            }
+        }
+
+        async function approve() {
+            try {
+                await fetch('/approve', { method: 'POST' });
+                document.getElementById('btn-continue').classList.add('hidden');
+            } catch (e) {
+                console.error('Failed to approve:', e);
+            }
+        }
+
+        async function stop() {
+            if (!confirm('Stop the current run?')) return;
+            try {
+                await fetch('/stop', { method: 'POST' });
+            } catch (e) {
+                console.error('Failed to stop:', e);
+            }
+        }
+
+        document.getElementById('btn-continue').addEventListener('click', approve);
+        document.getElementById('btn-stop').addEventListener('click', stop);
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        pollInterval = setInterval(fetchState, 2000);
+        fetchState();
+    </script>
+</body>
+</html>
