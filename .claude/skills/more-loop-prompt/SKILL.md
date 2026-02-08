@@ -2,7 +2,7 @@
 name: more-loop-prompt
 description: Create a prompt.md spec file for use with the more-loop iterative development script
 disable-model-invocation: true
-argument-hint: "[output-filename]"
+argument-hint: "[run-name]"
 allowed-tools: Read, Write, Glob, Grep, AskUserQuestion
 ---
 
@@ -35,7 +35,7 @@ It should NOT include:
 
 ## Your process
 
-1. **Ask the user** what they want to build. If `$ARGUMENTS` was provided, use it as the topic/output filename.
+1. **Ask the user** what they want to build. If `$ARGUMENTS` was provided, use it as the topic name.
 2. **Ask clarifying questions** to fill gaps — scope, constraints, tech stack, existing code context. Ask at most 3 rounds of questions. Be specific: offer choices rather than open-ended questions where possible.
 3. **Scan the codebase** if relevant — look at existing patterns, tech stack, directory structure to add concrete context to the prompt.
 4. **Write the prompt file** in markdown with these sections:
@@ -62,8 +62,14 @@ It should NOT include:
 <Sample inputs/outputs, API shapes, UI mockups — if applicable>
 ```
 
-5. **Write the file** to the path the user specifies (default: `prompt.md` in the current directory, or use `$ARGUMENTS` if it looks like a filename).
+5. **Write the file** to the output path determined below.
 
-## Output filename
+## Output path
 
-If `$ARGUMENTS` is provided and looks like a path or filename, use it as the output path. Otherwise default to `prompt.md` in the current working directory. Ensure the filename ends in `.md`.
+Files are organized under `.more-loop/runs/<run-name>/`:
+
+1. **Determine the run name**: Use `$ARGUMENTS` if provided (as a slug, e.g., `web-dashboard`). Otherwise, derive a short kebab-case slug from the topic the user described (e.g., "Add auth system" → `auth-system`).
+2. **Create the directory**: `.more-loop/runs/<run-name>/`
+3. **Write the file**: `.more-loop/runs/<run-name>/prompt.md`
+
+If `$ARGUMENTS` looks like an explicit file path (contains `/` or ends in `.md`), respect it as-is instead of using the directory convention.

@@ -1,5 +1,7 @@
 # more-loop
 
+[한국어](README_ko.md)
+
 Iterative development script that wraps the `claude` CLI in a while loop.
 
 ## How it works
@@ -68,6 +70,7 @@ more-loop [OPTIONS] <prompt-file> [verify-file]
 |--------|---------|-------------|
 | `-n, --iterations N` | 5 | Max iterations |
 | `-m, --model MODEL` | sonnet | Model to use |
+| `--max-tasks N` | auto | Max tasks in bootstrap (auto = iterations\*2, clamped 5-30) |
 | `-v, --verbose` | off | Show full claude output |
 | `-h, --help` | | Show help |
 
@@ -96,6 +99,18 @@ This repo includes two Claude Code skills for creating more-loop input files:
 
 Skills are auto-discovered when working in the repo directory. After running `./install.sh` or `make install`, they're available globally.
 
+## Stopping mid-loop
+
+Press `Ctrl+C` to stop. You may need to press it twice — once to kill the current `claude` subprocess and once to kill the outer loop.
+
+From another terminal you can also run:
+
+```bash
+pkill -f more-loop
+```
+
+Progress from completed iterations is preserved. The in-progress iteration may be partially applied — check `git status` and `git log` after stopping.
+
 ## Verification types
 
 | Type | Extension | How it works | Best for |
@@ -110,6 +125,10 @@ more-loop
 ├── more-loop                          # Main executable
 ├── install.sh                         # Install/uninstall script
 ├── Makefile                           # Make targets for install/link
+├── system-prompts/                    # Phase-specific LLM behavior control
+│   ├── bootstrap.md                   # Task count/granularity constraints
+│   ├── task.md                        # Single-task-per-iteration enforcement
+│   └── improve.md                     # Improvement mode guidance
 ├── .claude/
 │   └── skills/
 │       ├── more-loop-prompt/SKILL.md  # Prompt creation skill

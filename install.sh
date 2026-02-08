@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${HOME}/.local/bin"
 SKILLS_DIR="${HOME}/.claude/skills"
+DATA_DIR="${HOME}/.local/share/more-loop"
 
 usage() {
   cat <<'EOF'
@@ -35,6 +36,24 @@ install() {
   cp "$SCRIPT_DIR/.claude/skills/more-loop-verify/SKILL.md" "$SKILLS_DIR/more-loop-verify/SKILL.md"
   echo "  Installed skills to $SKILLS_DIR/"
 
+  # System prompts
+  mkdir -p "$DATA_DIR/system-prompts"
+  for f in "$SCRIPT_DIR"/system-prompts/*.md; do
+    [[ -f "$f" ]] && cp "$f" "$DATA_DIR/system-prompts/"
+  done
+  echo "  Installed system prompts to $DATA_DIR/system-prompts/"
+
+  # Web dashboard files
+  mkdir -p "$DATA_DIR"
+  if [[ -f "$SCRIPT_DIR/server.py" ]]; then
+    cp "$SCRIPT_DIR/server.py" "$DATA_DIR/server.py"
+    echo "  Installed $DATA_DIR/server.py"
+  fi
+  if [[ -f "$SCRIPT_DIR/dashboard.html" ]]; then
+    cp "$SCRIPT_DIR/dashboard.html" "$DATA_DIR/dashboard.html"
+    echo "  Installed $DATA_DIR/dashboard.html"
+  fi
+
   # PATH check
   if ! echo "$PATH" | tr ':' '\n' | grep -qx "$BIN_DIR"; then
     echo ""
@@ -57,6 +76,9 @@ uninstall() {
   rm -rf "$SKILLS_DIR/more-loop-prompt"
   rm -rf "$SKILLS_DIR/more-loop-verify"
   echo "  Removed skills from $SKILLS_DIR/"
+
+  rm -rf "$DATA_DIR"
+  echo "  Removed web dashboard files from $DATA_DIR/"
 
   echo "Done."
 }

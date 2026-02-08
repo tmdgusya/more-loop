@@ -1,2 +1,8 @@
 .claude/settings.local.json
 .more-loop/
+web-dashboard.md
+verify-web-dashboard-quality.md
+verify-web-dashboard.sh
+
+# pycache
+__pycache__/**

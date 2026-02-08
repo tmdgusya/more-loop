@@ -29,6 +29,10 @@ make link                 # Symlink for development (edits reflected immediately
 - `more-loop` — Main executable bash script
 - `install.sh` — Install/uninstall script
 - `Makefile` — Make targets for install/link/uninstall
+- `system-prompts/` — Phase-specific system prompts injected via `--append-system-prompt`
+  - `bootstrap.md` — Controls task count and granularity during bootstrap
+  - `task.md` — Enforces single-task-per-iteration protocol
+  - `improve.md` — Guides improvement mode behavior
 - `.claude/skills/more-loop-prompt/SKILL.md` — Skill: create prompt files
 - `.claude/skills/more-loop-verify/SKILL.md` — Skill: create verification files
 - `README.md` — Full documentation

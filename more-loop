@@ -13,10 +13,41 @@ NC='\033[0m'
 
 # Defaults
 MAX_ITERATIONS=5
+MAX_TASKS=""
 MODEL="sonnet"
 VERBOSE=false
 PROMPT_FILE=""
 VERIFY_FILE=""
+WEB_MODE=false
+APPROVE_MODE=false
+APPROVE_TIMEOUT=180
+WEB_PORT=""
+
+# Shared data directory for web dashboard files
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/more-loop"
+
+# Script directory for finding system-prompts in dev mode
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+load_system_prompt() {
+  local name="$1"
+  # Dev mode: repo files first
+  if [[ -f "${SCRIPT_DIR}/system-prompts/${name}.md" ]]; then
+    cat "${SCRIPT_DIR}/system-prompts/${name}.md"
+    return
+  fi
+  # Install mode: DATA_DIR
+  if [[ -f "${DATA_DIR}/system-prompts/${name}.md" ]]; then
+    cat "${DATA_DIR}/system-prompts/${name}.md"
+    return
+  fi
+  echo ""
+}
+
+# State variables for web dashboard
+RUN_NAME=""
+CURRENT_ITERATION=0
+PHASE=""
 
 usage() {
   cat <<'EOF'
@@ -33,6 +64,11 @@ Options:
   -n, --iterations N      Max iterations (default: 5)
   -m, --model MODEL       Model to use (default: sonnet)
   -v, --verbose           Show full claude output
+  -w, --web               Start web dashboard server
+  -a, --approve           Enable approval mode (pause after each iteration)
+  --approve-timeout N     Approval timeout in seconds (default: 180, 0 = infinite)
+  --port PORT             Web server port (default: auto-select)
+  --max-tasks N           Max tasks in bootstrap (default: auto = iterations*2, clamped 5-30)
   -h, --help              Show help
 EOF
 }
@@ -53,6 +89,129 @@ log_warn() {
   echo -e "${YELLOW}$1${NC}" >&2
 }
 
+# Write state.json for web dashboard consumption
+write_state_json() {
+  local phase="$1"
+  local current_task="$2"
+
+  # Count tasks
+  local tasks_total=0
+  local tasks_completed=0
+  if [[ -f "${RUN_DIR}/tasks.md" ]]; then
+    tasks_total="$(grep -c '^\- \[.\]' "${RUN_DIR}/tasks.md" 2>/dev/null || echo 0)"
+    tasks_completed="$(grep -c '^\- \[x\]' "${RUN_DIR}/tasks.md" 2>/dev/null || echo 0)"
+  fi
+
+  # Read files content
+  local tasks_content=""
+  local acceptance_content=""
+  [[ -f "${RUN_DIR}/tasks.md" ]] && tasks_content="$(cat "${RUN_DIR}/tasks.md")"
+  [[ -f "${RUN_DIR}/acceptance.md" ]] && acceptance_content="$(cat "${RUN_DIR}/acceptance.md")"
+
+  # If current_task is empty, try to preserve from existing state.json
+  if [[ -z "$current_task" ]] && [[ -f "${RUN_DIR}/state.json" ]]; then
+    current_task="$(grep -o '"current_task_name":"[^"]*"' "${RUN_DIR}/state.json" 2>/dev/null | cut -d'"' -f4)"
+  fi
+
+  # Build iterations array
+  local iterations_json="[]"
+  if [[ -d "${RUN_DIR}/iterations" ]]; then
+    local iter_files=($(ls -1 "${RUN_DIR}/iterations"/*.md 2>/dev/null | sort))
+    if [[ ${#iter_files[@]} -gt 0 ]]; then
+      iterations_json="["
+      local first=true
+      for iter_file in "${iter_files[@]}"; do
+        local basename
+        basename="$(basename "$iter_file")"
+
+        # Parse iteration number from filename
+        local iter_num=""
+        if [[ "$basename" =~ ^([0-9]+)(-verify)?\.md$ ]]; then
+          iter_num="${BASH_REMATCH[1]}"
+        fi
+
+        # Skip if we already processed this iteration
+        if [[ -n "$iter_num" ]]; then
+          local summary=""
+          local verify_result=""
+          local verify_detail=""
+
+          # Read summary from iteration file
+          if [[ "$basename" =~ ^[0-9]+\.md$ ]]; then
+            summary="$(cat "$iter_file" | sed 's/"/\\"/g' | tr '\n' ' ')"
+          fi
+
+          # Read verify result if exists
+          local verify_file="${RUN_DIR}/iterations/${iter_num}-verify.md"
+          if [[ -f "$verify_file" ]]; then
+            local verify_content
+            verify_content="$(cat "$verify_file")"
+            if echo "$verify_content" | head -1 | grep -qi "^PASS"; then
+              verify_result="PASS"
+            elif echo "$verify_content" | head -1 | grep -qi "^FAIL"; then
+              verify_result="FAIL"
+            else
+              verify_result="SKIP"
+            fi
+            verify_detail="$(echo "$verify_content" | sed 's/"/\\"/g' | tr '\n' ' ')"
+          fi
+
+          # Append to JSON array (avoid duplicates)
+          if [[ "$first" == true ]]; then
+            first=false
+          else
+            iterations_json="${iterations_json},"
+          fi
+
+          iterations_json="${iterations_json}{\"number\":${iter_num},\"summary\":\"${summary}\",\"verify_result\":\"${verify_result}\",\"verify_detail\":\"${verify_detail}\"}"
+        fi
+      done
+      iterations_json="${iterations_json}]"
+    fi
+  fi
+
+  # Get timestamps
+  local started_at=""
+  local updated_at
+  updated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  # Read started_at from existing state if available
+  if [[ -f "${RUN_DIR}/state.json" ]]; then
+    started_at="$(grep -o '"started_at":"[^"]*"' "${RUN_DIR}/state.json" | cut -d'"' -f4)"
+  fi
+  if [[ -z "$started_at" ]]; then
+    started_at="$updated_at"
+  fi
+
+  # Escape strings for JSON
+  local run_name_escaped="${RUN_NAME//\"/\\\"}"
+  local current_task_escaped="${current_task//\"/\\\"}"
+  local phase_escaped="${phase//\"/\\\"}"
+  local tasks_content_escaped="${tasks_content//\"/\\\"}"
+  tasks_content_escaped="${tasks_content_escaped//$'\n'/\\n}"
+  local acceptance_content_escaped="${acceptance_content//\"/\\\"}"
+  acceptance_content_escaped="${acceptance_content_escaped//$'\n'/\\n}"
+
+  # Write state.json
+  cat > "${RUN_DIR}/state.json" <<EOF
+{
+  "run_name": "${run_name_escaped}",
+  "model": "${MODEL}",
+  "max_iterations": ${MAX_ITERATIONS},
+  "current_iteration": ${CURRENT_ITERATION},
+  "phase": "${phase_escaped}",
+  "tasks_total": ${tasks_total},
+  "tasks_completed": ${tasks_completed},
+  "tasks": "${tasks_content_escaped}",
+  "acceptance": "${acceptance_content_escaped}",
+  "iterations": ${iterations_json},
+  "current_task_name": "${current_task_escaped}",
+  "started_at": "${started_at}",
+  "updated_at": "${updated_at}"
+}
+EOF
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -71,6 +230,26 @@ parse_args() {
       -h|--help)
         usage
         exit 0
+        ;;
+      -w|--web)
+        WEB_MODE=true
+        shift
+        ;;
+      -a|--approve)
+        APPROVE_MODE=true
+        shift
+        ;;
+      --approve-timeout)
+        APPROVE_TIMEOUT="$2"
+        shift 2
+        ;;
+      --max-tasks)
+        MAX_TASKS="$2"
+        shift 2
+        ;;
+      --port)
+        WEB_PORT="$2"
+        shift 2
         ;;
       -*)
         echo "Unknown option: $1" >&2
@@ -115,8 +294,10 @@ setup_run_dir() {
   base_name="${base_name%.*}"
 
   RUN_DIR=".more-loop/${base_name}"
+  RUN_NAME="${base_name}"
   if [[ -d "$RUN_DIR" ]]; then
     RUN_DIR=".more-loop/${base_name}-$(date +%s)"
+    RUN_NAME="${base_name}-$(date +%s)"
   fi
 
   mkdir -p "${RUN_DIR}/iterations"
@@ -129,13 +310,17 @@ setup_run_dir() {
 
 run_claude() {
   local prompt="$1"
+  local system_prompt="${2:-}"
+  local sys_args=()
+  [[ -n "$system_prompt" ]] && sys_args=(--append-system-prompt "$system_prompt")
+
   local output
   local rc=0
 
   if [[ "$VERBOSE" == true ]]; then
-    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "$prompt")" || rc=$?
+    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "${sys_args[@]}" "$prompt")" || rc=$?
   else
-    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "$prompt" 2>/dev/null)" || rc=$?
+    output="$(claude -p --model "$MODEL" --permission-mode bypassPermissions "${sys_args[@]}" "$prompt" 2>/dev/null)" || rc=$?
   fi
 
   if [[ $rc -ne 0 ]]; then
@@ -150,8 +335,20 @@ run_claude() {
 bootstrap() {
   log "[0/${MAX_ITERATIONS}] Bootstrap — generating tasks and acceptance criteria"
 
+  # Calculate max_tasks
+  local max_tasks="${MAX_TASKS}"
+  if [[ -z "$max_tasks" ]]; then
+    max_tasks=$((MAX_ITERATIONS * 2))
+    (( max_tasks < 5 )) && max_tasks=5
+    (( max_tasks > 30 )) && max_tasks=30
+  fi
+
   local spec
   spec="$(cat "$PROMPT_FILE")"
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt bootstrap)"
+  sys_prompt="${sys_prompt//\{max_tasks\}/$max_tasks}"
 
   local prompt
   prompt="$(cat <<EOF
@@ -166,6 +363,7 @@ Read the following spec and produce two files:
    Each item should be a \`- [ ]\` checkbox. These are concrete, ordered steps to implement the spec.
    Each task should be small enough to complete in a single iteration.
    Order them by dependency (do foundational tasks first).
+   Generate NO MORE THAN ${max_tasks} tasks.
 
 Write both files to: ${RUN_DIR}/
 
@@ -176,7 +374,7 @@ EOF
 )"
 
   local output
-  if ! output="$(run_claude "$prompt")"; then
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
     log_fail "Bootstrap failed"
     echo "$output" > "${RUN_DIR}/iterations/0-bootstrap.md"
     return 1
@@ -195,6 +393,9 @@ EOF
   fi
 
   log_pass "[0/${MAX_ITERATIONS}] Bootstrap complete"
+  if [[ "$WEB_MODE" == "true" ]]; then
+    write_state_json "bootstrap" ""
+  fi
 }
 
 count_remaining() {
@@ -230,6 +431,10 @@ Fix the issues before proceeding."
     log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
   fi
 
+  if [[ "$WEB_MODE" == "true" ]]; then
+    write_state_json "task" "$task_name"
+  fi
+
   local tasks
   tasks="$(cat "${RUN_DIR}/tasks.md")"
   local acceptance
@@ -239,6 +444,9 @@ Fix the issues before proceeding."
     prev_summary="Previous iteration summary:
 $(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
   fi
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt task)"
 
   local prompt
   prompt="$(cat <<EOF
@@ -265,7 +473,7 @@ EOF
 )"
 
   local output
-  if ! output="$(run_claude "$prompt")"; then
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
     log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during task iteration"
     echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
     return 1
@@ -280,6 +488,9 @@ run_verify() {
   if [[ -z "$VERIFY_FILE" ]]; then
     log_pass "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (no verify file)"
     echo "SKIP — no verification plan provided" > "${RUN_DIR}/iterations/${iter}-verify.md"
+    if [[ "$WEB_MODE" == "true" ]]; then
+      write_state_json "verify" ""
+    fi
     return 0
   fi
 
@@ -295,11 +506,17 @@ run_verify() {
       log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
       echo "PASS" > "${RUN_DIR}/iterations/${iter}-verify.md"
       echo "$result" >> "${RUN_DIR}/iterations/${iter}-verify.md"
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "verify" ""
+      fi
       return 0
     else
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
       echo "FAIL (exit code ${rc})" > "${RUN_DIR}/iterations/${iter}-verify.md"
       echo "$result" >> "${RUN_DIR}/iterations/${iter}-verify.md"
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "verify" ""
+      fi
       return 1
     fi
   elif [[ "$verify_ext" == "md" ]]; then
@@ -332,6 +549,9 @@ EOF
     if ! result="$(run_claude "$prompt")"; then
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: ERROR (claude failed)"
       echo "FAIL — claude verification failed" > "${RUN_DIR}/iterations/${iter}-verify.md"
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "verify" ""
+      fi
       return 1
     fi
 
@@ -339,14 +559,23 @@ EOF
 
     if echo "$result" | head -5 | grep -qi "^PASS"; then
       log_pass "[${iter}/${MAX_ITERATIONS}] Verify: PASS ✓"
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "verify" ""
+      fi
       return 0
     else
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: FAIL ✗"
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "verify" ""
+      fi
       return 1
     fi
   else
     log_warn "[${iter}/${MAX_ITERATIONS}] Verify: SKIP (unsupported verify file type: .${verify_ext})"
     echo "SKIP — unsupported verify file type" > "${RUN_DIR}/iterations/${iter}-verify.md"
+    if [[ "$WEB_MODE" == "true" ]]; then
+      write_state_json "verify" ""
+    fi
     return 0
   fi
 }
@@ -369,6 +598,30 @@ revert_last_task() {
   fi
 }
 
+enforce_single_task() {
+  local snapshot_file="$1"
+  local tasks_file="${RUN_DIR}/tasks.md"
+
+  local before_count after_count
+  before_count="$(grep -c '^\- \[x\]' "$snapshot_file" 2>/dev/null || echo 0)"
+  after_count="$(grep -c '^\- \[x\]' "$tasks_file" 2>/dev/null || echo 0)"
+  local delta=$(( after_count - before_count ))
+
+  if [[ "$delta" -le 1 ]]; then
+    return 0
+  fi
+
+  log_warn "enforce_single_task: Claude checked ${delta} tasks, reverting to keep only the first"
+
+  # Restore snapshot then check only the first previously-unchecked task
+  local first_unchecked_line
+  first_unchecked_line="$(grep -n '^\- \[ \]' "$snapshot_file" | head -1 | cut -d: -f1)"
+  cp "$snapshot_file" "$tasks_file"
+  if [[ -n "$first_unchecked_line" ]]; then
+    sed -i "${first_unchecked_line}s/^\- \[ \]/- [x]/" "$tasks_file"
+  fi
+}
+
 run_improve_iteration() {
   local iter="$1"
 
@@ -383,6 +636,9 @@ run_improve_iteration() {
     prev_summary="Previous iteration summary:
 $(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
   fi
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt improve)"
 
   local prompt
   prompt="$(cat <<EOF
@@ -410,13 +666,191 @@ EOF
 )"
 
   local output
-  if ! output="$(run_claude "$prompt")"; then
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
     log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during improve iteration"
     echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
     return 1
   fi
 
   echo "$output" > "${RUN_DIR}/iterations/${iter}.md"
+}
+
+# Web server management
+SERVER_PID=""
+
+start_web_server() {
+  local server_path="${DATA_DIR}/server.py"
+  local dashboard_path="${DATA_DIR}/dashboard.html"
+
+  # Check if dashboard files exist
+  if [[ ! -f "$server_path" ]]; then
+    log_fail "Error: server.py not found at $server_path"
+    log_fail "Run 'make link' or './install.sh' to install web dashboard files"
+    exit 1
+  fi
+
+  if [[ ! -f "$dashboard_path" ]]; then
+    log_fail "Error: dashboard.html not found at $dashboard_path"
+    log_fail "Run 'make link' or './install.sh' to install web dashboard files"
+    exit 1
+  fi
+
+  # Build command args
+  local server_args=("${RUN_DIR}")
+  [[ -n "$WEB_PORT" ]] && server_args+=("$WEB_PORT")
+
+  # Start server in background, capturing stderr to a temp file to get the URL
+  local server_stderr
+  server_stderr="$(mktemp)"
+  python3 "$server_path" "${server_args[@]}" 2>"$server_stderr" &
+  SERVER_PID=$!
+
+  # Wait a moment for server to start and print URL
+  sleep 1
+
+  # Check if server is still running
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    log_fail "Error: Failed to start web server"
+    cat "$server_stderr" >&2
+    rm -f "$server_stderr"
+    exit 1
+  fi
+
+  # Get and print the URL
+  local dashboard_url
+  dashboard_url="$(cat "$server_stderr" | grep -E '^http://' | head -1 || true)"
+  rm -f "$server_stderr"
+
+  if [[ -z "$dashboard_url" ]]; then
+    # Fallback to default URL format
+    local port="${WEB_PORT:-8080}"
+    dashboard_url="http://127.0.0.1:${port}"
+  fi
+
+  # Set up cleanup trap
+  trap "stop_web_server" EXIT SIGINT SIGTERM
+
+  # Save PID for cleanup
+  echo "$SERVER_PID" > "${RUN_DIR}/.server.pid"
+
+  # Print dashboard URL
+  echo "" >&2
+  echo "============================================" >&2
+  echo "  Web Dashboard running at:" >&2
+  echo "  ${dashboard_url}" >&2
+  echo "============================================" >&2
+  echo "" >&2
+}
+
+stop_web_server() {
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+
+  # Also try to kill using saved PID file
+  if [[ -f "${RUN_DIR}/.server.pid" ]]; then
+    local saved_pid
+    saved_pid="$(cat "${RUN_DIR}/.server.pid")"
+    if [[ -n "$saved_pid" ]] && kill -0 "$saved_pid" 2>/dev/null; then
+      kill "$saved_pid" 2>/dev/null || true
+    fi
+    rm -f "${RUN_DIR}/.server.pid"
+  fi
+}
+
+check_stop_signal() {
+  # Returns 0 (true) if stop signal file exists
+  [[ -f "${RUN_DIR}/.signal-stop" ]]
+}
+
+wait_for_approval() {
+  local context="$1"  # "bootstrap" or "iteration"
+
+  # Update state to waiting_approval
+  if [[ "$WEB_MODE" == "true" ]]; then
+    write_state_json "waiting_approval" ""
+  fi
+
+  local approve_file="${RUN_DIR}/.signal-approve"
+  local timeout="${APPROVE_TIMEOUT}"
+
+  # Handle infinite timeout (0)
+  if [[ "$timeout" -eq 0 ]]; then
+    timeout=999999999
+  fi
+
+  log ""
+  log "⏸ Approval required: ${context}"
+  log ""
+
+  if [[ "$WEB_MODE" == "true" ]]; then
+    # Web mode: poll for signal file
+    local elapsed=0
+    local poll_interval=1
+
+    log "Waiting for approval via web dashboard..."
+    log "(Press Ctrl+C to stop)"
+
+    while [[ $elapsed -lt $timeout ]]; do
+      # Check for stop signal
+      if check_stop_signal; then
+        log ""
+        log_warn "Stop signal received, exiting..."
+        rm -f "${RUN_DIR}/.signal-stop"
+        return 1
+      fi
+
+      # Check for approve signal
+      if [[ -f "$approve_file" ]]; then
+        rm -f "$approve_file"
+        log_pass "Approved via dashboard, continuing..."
+        log ""
+        return 0
+      fi
+
+      sleep "$poll_interval"
+      elapsed=$((elapsed + poll_interval))
+    done
+
+    # Timeout reached
+    log_warn "Approval timeout (${APPROVE_TIMEOUT}s), auto-continuing..."
+    log ""
+    return 0
+
+  else
+    # Terminal mode: prompt with countdown
+    local remaining=$timeout
+
+    log "Press Enter to continue, or Ctrl+C to stop..."
+    log "Auto-continue in ${remaining}s"
+
+    # Countdown timer
+    while [[ $remaining -gt 0 ]]; do
+      # Check for stop signal (if somehow created)
+      if check_stop_signal; then
+        log ""
+        log_warn "Stop signal received, exiting..."
+        rm -f "${RUN_DIR}/.signal-stop"
+        return 1
+      fi
+
+      # Read with timeout (1 second increments)
+      if read -r -t 1 -n 1 2>/dev/null; then
+        # User pressed a key
+        log_pass "Approved via terminal, continuing..."
+        log ""
+        return 0
+      fi
+
+      remaining=$((remaining - 1))
+    done
+
+    # Timeout reached
+    log_warn "Approval timeout (${APPROVE_TIMEOUT}s), auto-continuing..."
+    log ""
+    return 0
+  fi
 }
 
 main() {
@@ -427,6 +861,11 @@ main() {
   log "Run directory: ${RUN_DIR}"
   echo "" >&2
 
+  # Start web server if --web flag is set
+  if [[ "$WEB_MODE" == "true" ]]; then
+    start_web_server
+  fi
+
   # Bootstrap phase
   if ! bootstrap; then
     log_fail "Bootstrap failed, aborting"
@@ -434,27 +873,62 @@ main() {
   fi
   echo "" >&2
 
+  # Approval checkpoint after bootstrap
+  if [[ "$APPROVE_MODE" == "true" ]]; then
+    if ! wait_for_approval "bootstrap"; then
+      log "Run stopped by user"
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "done" ""
+      fi
+      exit 0
+    fi
+  fi
+
   # Main loop
   local iter=1
   while [[ $iter -le $MAX_ITERATIONS ]]; do
+    # Check for stop signal at start of each iteration
+    if check_stop_signal; then
+      log_warn "Stop signal received, exiting..."
+      if [[ "$WEB_MODE" == "true" ]]; then
+        write_state_json "done" ""
+      fi
+      rm -f "${RUN_DIR}/.signal-stop"
+      exit 0
+    fi
+
     local remaining
     remaining="$(count_remaining)"
 
     if [[ "$remaining" -gt 0 ]]; then
-      # Task mode
+      # Task mode — snapshot before, enforce single task after
+      cp "${RUN_DIR}/tasks.md" "${RUN_DIR}/.tasks-snapshot.md"
       run_task_iteration "$iter" || true
+      enforce_single_task "${RUN_DIR}/.tasks-snapshot.md"
 
       # Verify
       if ! run_verify "$iter"; then
         # Verification failed — revert task and retry next iteration
         revert_last_task
       fi
+      rm -f "${RUN_DIR}/.tasks-snapshot.md"
     else
       # Improvement mode
       run_improve_iteration "$iter" || true
 
       # Verify improvements too
       run_verify "$iter" || true
+    fi
+
+    # Approval checkpoint after each iteration
+    if [[ "$APPROVE_MODE" == "true" ]]; then
+      if ! wait_for_approval "iteration ${iter}"; then
+        log "Run stopped by user"
+        if [[ "$WEB_MODE" == "true" ]]; then
+          write_state_json "done" ""
+        fi
+        exit 0
+      fi
     fi
 
     echo "" >&2
@@ -469,6 +943,9 @@ main() {
     log_warn "${remaining} tasks remaining after ${MAX_ITERATIONS} iterations"
   fi
   log "Results in: ${RUN_DIR}/"
+  if [[ "$WEB_MODE" == "true" ]]; then
+    write_state_json "done" ""
+  fi
 }
 
 main "$@"

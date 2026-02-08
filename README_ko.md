@@ -1,0 +1,162 @@
+# more-loop
+
+[English](README.md)
+
+`claude` CLI를 while 루프로 감싸는 반복적 개발 스크립트.
+
+## 작동 방식
+
+1. **Bootstrap** — Claude가 스펙 파일을 읽고 `acceptance.md`(완료 기준)와 `tasks.md`(구현 단계)를 `- [ ]` 체크리스트로 생성
+2. **Loop** — 매 iteration: 태스크 하나 선택 → 구현 → 검증. 검증 실패 시 되돌리고 다음 iteration에서 재시도.
+3. **Improve** — N회 전에 모든 태스크가 완료되면 개선 작업(리팩토링, 테스트 등)을 수행
+
+매 iteration은 `--permission-mode bypassPermissions`를 가진 새로운 `claude -p` 프로세스. 상태는 `.more-loop/<run-name>/` 내 파일로 전달됩니다.
+
+## 빠른 시작
+
+```bash
+# 레포 클론
+git clone <repo-url> && cd more-loop
+
+# 레포에서 직접 실행
+./more-loop prompt.md
+
+# 또는 전역 설치
+./install.sh
+more-loop prompt.md
+```
+
+## 설치
+
+### 프로젝트 로컬 (설치 불필요)
+
+레포를 클론하고 `./more-loop`를 직접 실행. 레포 디렉토리에서 작업 시 스킬이 자동으로 검색됩니다.
+
+### install.sh
+
+```bash
+./install.sh              # ~/.local/bin/ + ~/.claude/skills/에 설치
+./install.sh --uninstall  # 설치된 파일 제거
+```
+
+### Makefile
+
+```bash
+make install    # 바이너리 + 스킬 복사
+make uninstall  # 설치된 파일 제거
+make link       # 복사 대신 심링크 (개발용)
+make unlink     # 심링크 제거
+make help       # 모든 타겟 표시
+```
+
+설치 경로 변경: `make install PREFIX=/usr/local`
+
+## 사용법
+
+```
+more-loop [OPTIONS] <prompt-file> [verify-file]
+```
+
+### 인수
+
+| 인수 | 설명 |
+|------|------|
+| `prompt-file` | 구현할 내용을 설명하는 스펙/프롬프트 (필수) |
+| `verify-file` | 검증 계획 — `.sh` 스크립트 또는 `.md` 체크리스트 (선택) |
+
+### 옵션
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `-n, --iterations N` | 5 | 최대 iteration 횟수 |
+| `-m, --model MODEL` | sonnet | 사용할 모델 |
+| `--max-tasks N` | auto | Bootstrap 태스크 최대 수 (auto = iterations\*2, 5-30 범위) |
+| `-v, --verbose` | off | claude 전체 출력 표시 |
+| `-h, --help` | | 도움말 표시 |
+
+### 예시
+
+```bash
+# 기본: 5 iterations, 기본 모델
+more-loop prompt.md
+
+# 셸 스크립트 검증 포함
+more-loop prompt.md verify.sh
+
+# 마크다운 검증과 커스텀 설정
+more-loop -n 10 -m opus prompt.md verify.md
+
+# 태스크 수 제한
+more-loop -n 8 --max-tasks 12 prompt.md verify.sh
+
+# 상세 출력
+more-loop -v prompt.md verify.sh
+```
+
+## 포함된 스킬
+
+이 레포에는 more-loop 입력 파일 생성을 위한 두 가지 Claude Code 스킬이 포함되어 있습니다:
+
+- **`/more-loop-prompt`** — `prompt.md` 스펙 파일 생성 대화형 위자드
+- **`/more-loop-verify`** — `verify.sh` 또는 `verify.md` 검증 파일 생성 대화형 위자드
+
+레포 디렉토리에서 작업 시 자동 검색됩니다. `./install.sh` 또는 `make install` 실행 후에는 전역으로 사용 가능합니다.
+
+## LLM 행동 제어
+
+more-loop는 2중 방어 체계로 LLM 행동을 제어합니다:
+
+| 계층 | 메커니즘 | 설명 |
+|------|----------|------|
+| 시스템 프롬프트 | `--append-system-prompt` | phase별 지시를 주입하여 "하나만 해" 강제 |
+| 코드 강제 | `enforce_single_task()` | snapshot 비교 후 초과분을 결정적으로 revert |
+
+시스템 프롬프트는 `system-prompts/` 디렉토리에 있으며 phase별로 분리되어 있습니다:
+
+- **`bootstrap.md`** — 태스크 수와 단위 제어
+- **`task.md`** — 단일 태스크 프로토콜 강제
+- **`improve.md`** — 개선 모드 안내
+
+## 중간 중지
+
+`Ctrl+C`를 누르면 중지됩니다. 현재 `claude` 서브프로세스를 먼저 종료하고 외부 루프를 종료하기 위해 두 번 눌러야 할 수 있습니다.
+
+다른 터미널에서:
+
+```bash
+pkill -f more-loop
+```
+
+완료된 iteration의 진행 상황은 보존됩니다. 진행 중이던 iteration은 부분 적용될 수 있습니다 — 중지 후 `git status`와 `git log`를 확인하세요.
+
+## 검증 유형
+
+| 유형 | 확장자 | 작동 방식 | 적합한 용도 |
+|------|--------|-----------|-------------|
+| 셸 스크립트 | `.sh` | bash로 실행, exit 0 = 통과 | 테스트, 빌드, 린트, 구체적 검사 |
+| 마크다운 | `.md` | Claude가 코드베이스 대비 체크리스트 평가 | 코드 품질, 아키텍처, 주관적 기준 |
+
+## 프로젝트 구조
+
+```
+more-loop
+├── more-loop                          # 메인 실행 파일
+├── install.sh                         # 설치/제거 스크립트
+├── Makefile                           # install/link Make 타겟
+├── system-prompts/                    # phase별 LLM 행동 제어
+│   ├── bootstrap.md                   # 태스크 수/단위 제약
+│   ├── task.md                        # 단일 태스크 강제
+│   └── improve.md                     # 개선 모드 안내
+├── .claude/
+│   └── skills/
+│       ├── more-loop-prompt/SKILL.md  # 프롬프트 생성 스킬
+│       └── more-loop-verify/SKILL.md  # 검증 파일 생성 스킬
+├── CLAUDE.md                          # Claude Code용 프로젝트 지침
+├── README.md                          # English documentation
+└── README_ko.md                       # 이 파일
+```
+
+## 요구 사항
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (PATH에 `claude`)
+- Bash 4+
