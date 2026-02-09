@@ -439,7 +439,7 @@ bootstrap() {
   sys_prompt="${sys_prompt//\{max_tasks\}/$max_tasks}"
 
   local prompt
-  prompt="$(cat <<EOF
+  IFS= read -r -d "" prompt <<EOF || true
 You are bootstrapping an iterative development process.
 
 Read the following spec and produce two files:
@@ -459,7 +459,6 @@ Here is the spec:
 
 ${spec}
 EOF
-)"
 
   local output
   if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
@@ -529,7 +528,7 @@ rebootstrap() {
   sys_prompt="${sys_prompt//\{max_tasks\}/$max_tasks}"
 
   local prompt
-  prompt="$(cat <<EOF
+  IFS= read -r -d "" prompt <<EOF || true
 You are re-bootstrapping an iterative development process based on review feedback.
 
 The reviewer has requested changes to the plan. Revise the tasks and acceptance criteria
@@ -555,7 +554,6 @@ ${reviews_json}
 5. Generate NO MORE THAN ${max_tasks} tasks
 6. Preserve any aspects of the plan that weren't criticized
 EOF
-)"
 
   local output
   if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
@@ -639,7 +637,7 @@ $(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
   sys_prompt="$(load_system_prompt task)"
 
   local prompt
-  prompt="$(cat <<EOF
+  IFS= read -r -d "" prompt <<EOF || true
 You are on iteration ${iter} of ${MAX_ITERATIONS} in an iterative development process.
 
 ## Current tasks (${remaining} remaining):
@@ -660,7 +658,6 @@ ${verify_info}
 
 Do ONE task only. Be thorough but focused.
 EOF
-)"
 
   local output
   if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
@@ -725,7 +722,7 @@ run_verify() {
     tasks_content="$(cat "${RUN_DIR}/tasks.md")"
 
     local prompt
-    prompt="$(cat <<EOF
+    IFS= read -r -d "" prompt <<EOF || true
 You are a verification agent in an ITERATIVE development process.
 
 ## Full verification checklist (for reference):
@@ -750,7 +747,6 @@ Output exactly one of:
 
 A task that is correctly implemented should PASS even if unrelated checklist items are still unchecked.
 EOF
-)"
 
     if ! result="$(run_claude "$prompt")"; then
       log_fail "[${iter}/${MAX_ITERATIONS}] Verify: ERROR (claude failed)"
@@ -830,7 +826,8 @@ enforce_single_task() {
   unchecked_lines="$(grep -n '^\- \[ \]' "$snapshot_file" | head -"$max_per_iter" | cut -d: -f1)"
   cp "$snapshot_file" "$tasks_file"
   for line_num in $unchecked_lines; do
-    sed -i "${line_num}s/^\- \[ \]/- [x]/" "$tasks_file"
+    sed "${line_num}s/^\- \[ \]/- [x]/" "$tasks_file" > "$tasks_file.tmp"
+    mv "$tasks_file.tmp" "$tasks_file"
   done
 }
 
@@ -853,7 +850,7 @@ $(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
   sys_prompt="$(load_system_prompt improve)"
 
   local prompt
-  prompt="$(cat <<EOF
+  IFS= read -r -d "" prompt <<EOF || true
 You are in improvement mode. All planned tasks are complete.
 
 ## Completed tasks:
@@ -875,7 +872,6 @@ Analyze the codebase. Choose the single most impactful improvement from:
 
 Implement the improvement. Write a brief summary of what you did to stdout.
 EOF
-)"
 
   local output
   if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
@@ -911,7 +907,7 @@ run_task_fix_iteration() {
   sys_prompt="$(load_system_prompt task)"
 
   local prompt
-  prompt="$(cat <<EOF
+  IFS= read -r -d "" prompt <<EOF || true
 You are in FIX mode. All tasks are marked complete but verification is failing.
 
 ## Completed tasks:
@@ -931,7 +927,6 @@ ${verify_feedback}
 
 Focus on making the verify pass. Do not refactor or improve unrelated code.
 EOF
-)"
 
   local output
   if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
