@@ -831,6 +831,83 @@ enforce_single_task() {
   done
 }
 
+run_audit_iteration() {
+  local iter="$1"
+
+  log "[${iter}/${MAX_ITERATIONS}] Audit — reviewing implementation quality"
+
+  maybe_write_state "audit"
+
+  local tasks
+  tasks="$(cat "${RUN_DIR}/tasks.md")"
+  local acceptance
+  acceptance="$(cat "${RUN_DIR}/acceptance.md")"
+
+  # Gather all verify outputs for quality signal
+  local verify_history=""
+  for vf in "${RUN_DIR}"/iterations/*-verify.md; do
+    [[ -f "$vf" ]] || continue
+    verify_history="${verify_history}
+--- $(basename "$vf") ---
+$(cat "$vf")
+"
+  done
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt audit)"
+
+  local prompt
+  IFS= read -r -d "" prompt <<EOF || true
+You are a code auditor. All tasks have been marked complete. Your job is to verify
+the ACTUAL quality of the implementation — not trust that "checked off" means "done well."
+
+## Completed tasks:
+${tasks}
+
+## Acceptance criteria:
+${acceptance}
+
+## Verification history (all prior verify outputs):
+${verify_history}
+
+## Instructions:
+1. Read the ACTUAL implementation code for EVERY completed task
+2. For each task, assess honestly:
+   - SOLID — correctly implemented, handles edge cases, clean code
+   - WEAK — works but has issues (missing edge cases, fragile logic, poor structure)
+   - INCOMPLETE — marked done but not fully implemented, or implementation doesn't match the task description
+3. List specific issues found (file path, line number, concrete problem)
+4. Write your audit to ${RUN_DIR}/audit.md in this format:
+
+## Audit Summary
+<2-3 sentences on overall implementation quality>
+
+## Task Ratings
+
+| Task | Rating | Issues |
+|------|--------|--------|
+| <task name> | SOLID/WEAK/INCOMPLETE | <specific issue or "—"> |
+
+## Priority Fixes
+1. <most critical issue — file:line — what's wrong>
+2. <second issue>
+3. <third issue>
+
+Do NOT fix anything. Only audit and report. Be brutally honest — the purpose of this
+audit is to guide subsequent improvement iterations. Sugarcoating wastes everyone's time.
+EOF
+
+  local output
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
+    log_fail "[${iter}/${MAX_ITERATIONS}] claude failed during audit iteration"
+    echo "claude failed with error" > "${RUN_DIR}/iterations/${iter}.md"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/${iter}.md"
+  log_pass "[${iter}/${MAX_ITERATIONS}] Audit complete — results in audit.md"
+}
+
 run_improve_iteration() {
   local iter="$1"
 
@@ -840,10 +917,27 @@ run_improve_iteration() {
   tasks="$(cat "${RUN_DIR}/tasks.md")"
   local acceptance
   acceptance="$(cat "${RUN_DIR}/acceptance.md")"
-  local prev_summary=""
-  if [[ -f "${RUN_DIR}/iterations/$((iter - 1)).md" ]]; then
-    prev_summary="Previous iteration summary:
-$(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
+
+  # Build audit context
+  local audit_findings=""
+  if [[ -f "${RUN_DIR}/audit.md" ]]; then
+    audit_findings="## Audit findings (address WEAK/INCOMPLETE items by priority):
+$(cat "${RUN_DIR}/audit.md")"
+  fi
+
+  # Build improve history (prevent repeats)
+  local improve_history=""
+  if [[ -f "${RUN_DIR}/improve-log.md" ]]; then
+    # Limit to last 100 lines to avoid prompt bloat
+    improve_history="## Previous improvements already made (DO NOT repeat these):
+$(tail -100 "${RUN_DIR}/improve-log.md")"
+  fi
+
+  # Include latest verify output as quality signal
+  local verify_detail=""
+  if [[ -f "${RUN_DIR}/iterations/${iter}-verify.md" ]]; then
+    verify_detail="## Latest verification output:
+$(cat "${RUN_DIR}/iterations/${iter}-verify.md")"
   fi
 
   local sys_prompt
@@ -851,7 +945,7 @@ $(cat "${RUN_DIR}/iterations/$((iter - 1)).md")"
 
   local prompt
   IFS= read -r -d "" prompt <<EOF || true
-You are in improvement mode. All planned tasks are complete.
+You are in improvement mode. All planned tasks are complete and verification passes.
 
 ## Completed tasks:
 ${tasks}
@@ -859,18 +953,27 @@ ${tasks}
 ## Acceptance criteria:
 ${acceptance}
 
-${prev_summary}
+${audit_findings}
+
+${verify_detail}
+
+${improve_history}
 
 ## Instructions:
-Analyze the codebase. Choose the single most impactful improvement from:
-- Simplify complex code
-- Refactor for clarity
-- Add missing tests
-- Improve error handling
-- Optimize performance
-- Improve documentation
+PHASE 1 — AUDIT (do this first, report findings):
+- Read the actual implementation code for the areas flagged in the audit findings above
+- If no audit findings, read the implementation for each completed task
+- Identify the weakest area: incomplete implementations, fragile logic,
+  missing edge cases, untested paths, unclear code
 
-Implement the improvement. Write a brief summary of what you did to stdout.
+PHASE 2 — ACT (one improvement only):
+- Pick the single highest-impact finding from your audit
+- Implement the fix/improvement completely
+- If a previous improvement (listed above) already addressed something, skip it
+
+Write your output as:
+AUDIT: <2-3 sentence summary of what you found>
+ACTION: <what you implemented and why>
 EOF
 
   local output
@@ -881,6 +984,13 @@ EOF
   fi
 
   echo "$output" > "${RUN_DIR}/iterations/${iter}.md"
+
+  # Append to improve log for cumulative context across iterations
+  {
+    echo "## Iteration ${iter}"
+    echo "$output"
+    echo ""
+  } >> "${RUN_DIR}/improve-log.md"
 }
 
 run_task_fix_iteration() {
@@ -1254,14 +1364,20 @@ main() {
       # Results are logged and fed to next iteration as feedback
       run_verify "$iter" || true
     else
-      # All tasks done — verify is now a gate
-      if run_verify "$iter"; then
-        # Verify passed — enter improvement mode
-        run_improve_iteration "$iter" || true
+      # All tasks done — first run audit, then improve/fix cycle
+      if [[ ! -f "${RUN_DIR}/audit.md" ]]; then
+        # One-time audit: review actual implementation quality
+        run_audit_iteration "$iter" || true
       else
-        # Verify failed — enter fix mode (Claude sees failure feedback)
-        log_warn "Verify failed after all tasks — entering fix iteration"
-        run_task_fix_iteration "$iter" || true
+        # Audit exists — verify is now a gate
+        if run_verify "$iter"; then
+          # Verify passed — enter directed improvement mode
+          run_improve_iteration "$iter" || true
+        else
+          # Verify failed — enter fix mode (Claude sees failure feedback)
+          log_warn "Verify failed after all tasks — entering fix iteration"
+          run_task_fix_iteration "$iter" || true
+        fi
       fi
     fi
 
