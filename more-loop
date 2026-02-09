@@ -960,32 +960,35 @@ start_web_server() {
   local server_args=("${RUN_DIR}")
   [[ -n "$WEB_PORT" ]] && server_args+=("$WEB_PORT")
 
-  # Start server in background, capturing stderr to a temp file to get the URL
+  # Start server in background
   local server_stderr
   server_stderr="$(mktemp)"
   python3 "$server_path" "${server_args[@]}" 2>"$server_stderr" &
   SERVER_PID=$!
 
-  # Wait a moment for server to start and print URL
-  sleep 1
-
-  # Check if server is still running
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    log_fail "Error: Failed to start web server"
-    cat "$server_stderr" >&2
-    rm -f "$server_stderr"
-    exit 1
-  fi
-
-  # Get and print the URL
-  local dashboard_url
-  dashboard_url="$(cat "$server_stderr" | grep -E '^http://' | head -1 || true)"
+  # Poll for .server.url file written by server.py (up to 10 seconds)
+  local url_file="${RUN_DIR}/.server.url"
+  local dashboard_url=""
+  local waited=0
+  while [[ $waited -lt 100 ]]; do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      log_fail "Error: Failed to start web server"
+      cat "$server_stderr" >&2
+      rm -f "$server_stderr"
+      exit 1
+    fi
+    if [[ -s "$url_file" ]]; then
+      dashboard_url="$(cat "$url_file")"
+      break
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
   rm -f "$server_stderr"
 
   if [[ -z "$dashboard_url" ]]; then
-    # Fallback to default URL format
-    local port="${WEB_PORT:-8080}"
-    dashboard_url="http://127.0.0.1:${port}"
+    log_fail "Error: Web server started but failed to report its URL"
+    exit 1
   fi
 
   # Clean up web server on exit; on signals, also terminate the script
@@ -1020,6 +1023,7 @@ stop_web_server() {
     fi
     rm -f "${RUN_DIR}/.server.pid"
   fi
+  rm -f "${RUN_DIR}/.server.url"
 }
 
 check_stop_signal() {

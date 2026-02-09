@@ -4,7 +4,6 @@
 import json
 import os
 import signal
-import socket
 import sys
 import tempfile
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -145,15 +144,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-def find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        s.listen(1)
-        return s.getsockname()[1]
-
 def main():
     RUN_DIR.mkdir(parents=True, exist_ok=True)
-    port = PORT if PORT > 0 else find_free_port()
 
     def signal_handler(*_):
         sys.exit(0)
@@ -161,9 +153,12 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
-    server = HTTPServer(("", port), DashboardHandler)
-    print(f"http://127.0.0.1:{port}", file=sys.stderr)
+    server = HTTPServer(("", PORT), DashboardHandler)
+    port = server.server_address[1]
+    url = f"http://127.0.0.1:{port}"
+    print(url, file=sys.stderr)
     sys.stderr.flush()
+    atomic_write(RUN_DIR / ".server.url", url)
 
     try:
         server.serve_forever()
