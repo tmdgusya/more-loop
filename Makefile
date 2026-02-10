@@ -13,9 +13,10 @@ install: ## Copy more-loop binary and skills
 	mkdir -p $(BIN_DIR)
 	cp $(REPO_DIR)more-loop $(BIN_DIR)/more-loop
 	chmod +x $(BIN_DIR)/more-loop
-	mkdir -p $(SKILLS_DIR)/more-loop-prompt $(SKILLS_DIR)/more-loop-verify
+	mkdir -p $(SKILLS_DIR)/more-loop-prompt $(SKILLS_DIR)/more-loop-verify $(SKILLS_DIR)/more-loop-oracle
 	cp $(REPO_DIR).claude/skills/more-loop-prompt/SKILL.md $(SKILLS_DIR)/more-loop-prompt/SKILL.md
 	cp $(REPO_DIR).claude/skills/more-loop-verify/SKILL.md $(SKILLS_DIR)/more-loop-verify/SKILL.md
+	cp $(REPO_DIR).claude/skills/more-loop-oracle/SKILL.md $(SKILLS_DIR)/more-loop-oracle/SKILL.md
 	mkdir -p $(DATA_DIR)/system-prompts
 	cp $(REPO_DIR)system-prompts/*.md $(DATA_DIR)/system-prompts/
 	@echo "  Installed system prompts to $(DATA_DIR)/system-prompts/"
@@ -33,15 +34,17 @@ uninstall: ## Remove installed binary and skills
 	rm -f $(BIN_DIR)/more-loop
 	rm -rf $(SKILLS_DIR)/more-loop-prompt
 	rm -rf $(SKILLS_DIR)/more-loop-verify
+	rm -rf $(SKILLS_DIR)/more-loop-oracle
 	rm -rf $(DATA_DIR)
 	@echo "Uninstalled more-loop"
 
 link: ## Symlink binary and skills (for development)
 	mkdir -p $(BIN_DIR)
 	ln -sf $(REPO_DIR)more-loop $(BIN_DIR)/more-loop
-	mkdir -p $(SKILLS_DIR)/more-loop-prompt $(SKILLS_DIR)/more-loop-verify
+	mkdir -p $(SKILLS_DIR)/more-loop-prompt $(SKILLS_DIR)/more-loop-verify $(SKILLS_DIR)/more-loop-oracle
 	ln -sf $(REPO_DIR).claude/skills/more-loop-prompt/SKILL.md $(SKILLS_DIR)/more-loop-prompt/SKILL.md
 	ln -sf $(REPO_DIR).claude/skills/more-loop-verify/SKILL.md $(SKILLS_DIR)/more-loop-verify/SKILL.md
+	ln -sf $(REPO_DIR).claude/skills/more-loop-oracle/SKILL.md $(SKILLS_DIR)/more-loop-oracle/SKILL.md
 	mkdir -p $(DATA_DIR)/system-prompts
 	@for f in $(REPO_DIR)system-prompts/*.md; do \
 		ln -sf "$$f" $(DATA_DIR)/system-prompts/$$(basename "$$f"); \
@@ -61,4 +64,5 @@ unlink: ## Remove symlinks
 	rm -f $(BIN_DIR)/more-loop
 	rm -rf $(SKILLS_DIR)/more-loop-prompt
 	rm -rf $(SKILLS_DIR)/more-loop-verify
+	rm -rf $(SKILLS_DIR)/more-loop-oracle
 	@echo "Unlinked more-loop"

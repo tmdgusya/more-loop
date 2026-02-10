@@ -33,9 +33,11 @@ install() {
   # Skills — remove first to handle existing symlinks
   mkdir -p "$SKILLS_DIR/more-loop-prompt"
   mkdir -p "$SKILLS_DIR/more-loop-verify"
-  rm -f "$SKILLS_DIR/more-loop-prompt/SKILL.md" "$SKILLS_DIR/more-loop-verify/SKILL.md"
+  mkdir -p "$SKILLS_DIR/more-loop-oracle"
+  rm -f "$SKILLS_DIR/more-loop-prompt/SKILL.md" "$SKILLS_DIR/more-loop-verify/SKILL.md" "$SKILLS_DIR/more-loop-oracle/SKILL.md"
   cp "$SCRIPT_DIR/.claude/skills/more-loop-prompt/SKILL.md" "$SKILLS_DIR/more-loop-prompt/SKILL.md"
   cp "$SCRIPT_DIR/.claude/skills/more-loop-verify/SKILL.md" "$SKILLS_DIR/more-loop-verify/SKILL.md"
+  cp "$SCRIPT_DIR/.claude/skills/more-loop-oracle/SKILL.md" "$SKILLS_DIR/more-loop-oracle/SKILL.md"
   echo "  Installed skills to $SKILLS_DIR/"
 
   # System prompts — remove first to handle existing symlinks
@@ -80,6 +82,7 @@ uninstall() {
 
   rm -rf "$SKILLS_DIR/more-loop-prompt"
   rm -rf "$SKILLS_DIR/more-loop-verify"
+  rm -rf "$SKILLS_DIR/more-loop-oracle"
   echo "  Removed skills from $SKILLS_DIR/"
 
   rm -rf "$DATA_DIR"
