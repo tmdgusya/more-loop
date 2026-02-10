@@ -78,6 +78,7 @@ more-loop --resume <run-dir> [OPTIONS]
 | `--approve-timeout N` | 180 | 승인 대기 타임아웃 초 (0 = 무한) |
 | `--port PORT` | auto | 웹 서버 포트 |
 | `--resume DIR` | | 중단된 실행을 run directory에서 이어하기 |
+| `--oracle` | off | Oracle Test-First Architect 단계 활성화 (반복 전) |
 | `-h, --help` | | 도움말 표시 |
 
 ### 예시
@@ -129,6 +130,39 @@ resume 시 `-n`은 **추가 iteration 횟수**입니다 (총 횟수가 아님). 
 - **`/more-loop-verify`** — `verify.sh` 또는 `verify.md` 검증 파일 생성 대화형 위자드
 
 레포 디렉토리에서 작업 시 자동 검색됩니다. `./install.sh` 또는 `make install` 실행 후에는 전역으로 사용 가능합니다.
+
+## Oracle: Test-First Architect 단계
+
+`--oracle` 플래그는 코드를 작성하기 전에 포괄적인 테스트 기준을 정의하는 사전 구현 단계를 활성화합니다. 이는 Test-First Architect 패턴을 따릅니다:
+
+### Oracle이 하는 일
+
+1. **5가지 Oracle 레벨 안내** — Syntax, I/O, Property, Formal, Semantic
+2. **구체적인 질문** — 테스트 가능한 기준으로 테스트 가이드 작성
+3. **`test-guide.md` 생성** — 작업 반복 중 컨텍스트로 사용됨
+4. **완성도 보장** — 모든 레벨에 충분한 기준이 있을 때까지 완료하지 않음
+
+### 5가지 Oracle 레벨
+
+| 레벨 | 질문 | 예시 |
+|------|------|------|
+| Lv.1: Syntax | 실행되는가? | "빌드 성공, 타입 검사 통과" |
+| Lv.2: I/O | 작동하는가? | "add(5, 3)은 8 반환, POST /users는 201 반환" |
+| Lv.3: Property | 어떤 불변식이 있는가? | "모든 a, b에 대해: add(a, b) == add(b, a)" |
+| Lv.4: Formal | 비즈니스 규칙은? | "계좌 잔액은 음수가 될 수 없음" |
+| Lv.5: Semantic | 사용자 의도를 충족하는가? | "로그인한 사용자가 로그아웃하면 로그인 페이지 표시" |
+
+### 사용 예
+
+```bash
+# Oracle 단계와 함께
+more-loop --oracle prompt.md verify.sh
+
+# Oracle + 승인 모드
+more-loop --oracle --approve prompt.md verify.sh
+```
+
+전체 Test Guide 예시는 `docs/test-guide-example.md`를 참조하세요.
 
 ## LLM 행동 제어
 
