@@ -680,6 +680,14 @@ run_task_iteration() {
 ${prev_verify}"
     fi
   fi
+
+  # Include Test Guide if available (Oracle phase output)
+  local test_guide_info=""
+  if [[ -f "${RUN_DIR}/test-guide.md" ]]; then
+    test_guide_info="## Test Guide (Oracle output — defines correctness criteria):
+$(cat "${RUN_DIR}/test-guide.md")"
+  fi
+
   log "[${iter}/${MAX_ITERATIONS}] Task: \"${task_name}\" — ${remaining} tasks remaining"
 
   maybe_write_state "task" "$task_name"
@@ -710,6 +718,8 @@ ${acceptance}
 ${prev_summary}
 
 ${verify_info}
+
+${test_guide_info}
 
 ## Instructions:
 1. Pick the NEXT unchecked task ("- [ ]") from tasks.md
