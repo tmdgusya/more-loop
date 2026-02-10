@@ -78,6 +78,7 @@ more-loop --resume <run-dir> [OPTIONS]
 | `--approve-timeout N` | 180 | Approval timeout in seconds (0 = infinite) |
 | `--port PORT` | auto | Web server port |
 | `--resume DIR` | | Resume an interrupted run from its run directory |
+| `--oracle` | off | Enable Oracle Test-First Architect phase before iterations |
 | `-h, --help` | | Show help |
 
 ### Examples
@@ -123,12 +124,46 @@ When resuming, `-n` means **additional iterations** (not total). So `-n 10` runs
 
 ## Bundled skills
 
-This repo includes two Claude Code skills for creating more-loop input files:
+This repo includes three Claude Code skills for creating more-loop input files:
 
 - **`/more-loop-prompt`** — Interactive wizard to create a `prompt.md` spec file
 - **`/more-loop-verify`** — Interactive wizard to create a `verify.sh` or `verify.md` verification file
+- **`/more-loop-oracle`** — Interactive Test-First Architect to create comprehensive Test Guides
 
 Skills are auto-discovered when working in the repo directory. After running `./install.sh` or `make install`, they're available globally.
+
+## Oracle: Test-First Architect Phase
+
+The `--oracle` flag enables a pre-implementation phase that helps you define comprehensive test criteria BEFORE writing any code. This follows the Test-First Architect pattern:
+
+### What the Oracle does
+
+1. **Guides you through 5 Oracle levels** — Syntax, I/O, Property, Formal, Semantic
+2. **Asks specific questions** — Builds a Test Guide with testable criteria
+3. **Creates `test-guide.md`** — This file is used during task iterations as context
+4. **Ensures completeness** — Won't finish until all levels have sufficient criteria
+
+### The 5 Oracle Levels
+
+| Level | Question | Example |
+|-------|----------|---------|
+| Lv.1: Syntax | Does it run? | "Build passes, type checking succeeds" |
+| Lv.2: I/O | Does it work? | "add(5, 3) returns 8, POST /users returns 201" |
+| Lv.3: Property | What invariants hold? | "For all a, b: add(a, b) == add(b, a)" |
+| Lv.4: Formal | What are business rules? | "Account balance is never negative" |
+| Lv.5: Semantic | Does it meet user intent? | "Given logged-in user, when they logout, then they see login page" |
+
+### Example usage
+
+```bash
+# With Oracle phase
+more-loop --oracle prompt.md verify.sh
+
+# With Oracle + approval mode
+more-loop --oracle --approve prompt.md verify.sh
+```
+
+See `docs/test-guide-example.md` for a complete Test Guide example.
 
 ## LLM behavior control
 
