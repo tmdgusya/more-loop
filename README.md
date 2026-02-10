@@ -209,14 +209,23 @@ more-loop
 ├── Makefile                           # Make targets for install/link
 ├── system-prompts/                    # Phase-specific LLM behavior control
 │   ├── bootstrap.md                   # Task count/granularity constraints
+│   ├── oracle.md                      # Test-First Architect phase
 │   ├── task.md                        # Single-task-per-iteration enforcement
-│   └── improve.md                     # Improvement mode guidance
+│   ├── improve.md                     # Improvement mode guidance
+│   └── audit.md                       # Code audit protocol
 ├── .claude/
 │   └── skills/
 │       ├── more-loop-prompt/SKILL.md  # Prompt creation skill
-│       └── more-loop-verify/SKILL.md  # Verify file creation skill
+│       ├── more-loop-verify/SKILL.md  # Verify file creation skill
+│       └── more-loop-oracle/SKILL.md  # Test Guide creation skill
+├── docs/
+│   ├── plans/                         # Implementation plans
+│   └── test-guide-example.md          # Example Test Guide
+├── tests/                             # Integration tests
+│   └── test-oracle-integration.sh     # Oracle feature test
 ├── CLAUDE.md                          # Project instructions for Claude Code
-└── README.md                          # This file
+├── README.md                          # This file
+└── README_ko.md                       # Korean documentation
 ```
 
 ## Requirements
