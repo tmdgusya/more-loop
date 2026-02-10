@@ -23,6 +23,7 @@ WEB_MODE=false
 APPROVE_MODE=false
 APPROVE_EVERY=false
 APPROVE_TIMEOUT=180
+ORACLE_MODE=false
 WEB_PORT=""
 
 # Shared data directory for web dashboard files
@@ -71,6 +72,7 @@ Options:
   -a, --approve           Enable approval mode (pause after bootstrap only)
   --approve-every         Pause after EVERY iteration (not just bootstrap)
   --approve-timeout N     Approval timeout in seconds (default: 180, 0 = infinite)
+  --oracle                Enable Oracle Test-First Architect phase before iterations
   --port PORT             Web server port (default: auto-select)
   --max-tasks N           Max tasks in bootstrap (default: same as iterations, clamped to <= iterations)
   --resume DIR            Resume an interrupted run from its run directory
@@ -278,6 +280,10 @@ parse_args() {
       --port)
         WEB_PORT="$2"
         shift 2
+        ;;
+      --oracle)
+        ORACLE_MODE=true
+        shift
         ;;
       -*)
         echo "Unknown option: $1" >&2
