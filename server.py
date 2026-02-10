@@ -15,6 +15,7 @@ SIGNAL_APPROVE = RUN_DIR / ".signal-approve"
 SIGNAL_STOP = RUN_DIR / ".signal-stop"
 SIGNAL_REQUEST_CHANGES = RUN_DIR / ".signal-request-changes"
 REVIEWS_FILE = RUN_DIR / "reviews.json"
+TEST_GUIDE_FILE = RUN_DIR / "test-guide.md"
 DATA_DIR = Path.home() / ".local" / "share" / "more-loop"
 
 
@@ -98,6 +99,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self.send_json({"reviews": []})
             else:
                 self.send_json({"reviews": []})
+        elif self.path == "/test-guide":
+            if TEST_GUIDE_FILE.exists():
+                try:
+                    content = TEST_GUIDE_FILE.read_text()
+                    self.send_json({"content": content})
+                except IOError:
+                    self.send_json({"content": "", "error": "Failed to read test guide"}, 500)
+            else:
+                self.send_json({"content": ""})
         else:
             self.send_error(404)
 
@@ -139,6 +149,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 atomic_write(REVIEWS_FILE, json.dumps(data, indent=2))
                 SIGNAL_REQUEST_CHANGES.touch()
                 self.send_json({"status": "requested"})
+            except IOError as e:
+                self.send_json({"error": str(e)}, 500)
+        elif self.path == "/test-guide":
+            data, err = self.read_json_body()
+            if err:
+                self.send_json({"error": err}, 400)
+                return
+            if not isinstance(data, dict) or "content" not in data:
+                self.send_json({"error": "Missing 'content' field"}, 400)
+                return
+            try:
+                atomic_write(TEST_GUIDE_FILE, data["content"])
+                self.send_json({"status": "saved"})
             except IOError as e:
                 self.send_json({"error": str(e)}, 500)
         else:

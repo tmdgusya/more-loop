@@ -6,100 +6,171 @@
     <title>more-loop Dashboard</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: rgba(22, 27, 34, 0.75);
+            --border-color: rgba(48, 54, 61, 0.6);
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-green: #238636;
+            --accent-purple: #8957e5;
+            --accent-orange: #e3b341;
+            --accent-red: #f85149;
+            --glass-bg: rgba(22, 27, 34, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --level-1-color: #58a6ff;
+            --level-2-color: #3fb950;
+            --level-3-color: #d29922;
+            --level-4-color: #bc8cff;
+            --level-5-color: #f778ba;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0d1117;
-            color: #c9d1d9;
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+            background-attachment: fixed;
+            color: var(--text-primary);
             line-height: 1.6;
             min-height: 100vh;
         }
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         header {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
             margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
         }
-        header h1 { color: #58a6ff; font-size: 1.5rem; margin-bottom: 10px; }
+        header h1 {
+            background: linear-gradient(135deg, #58a6ff, #79c0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 1.75rem;
+            margin-bottom: 12px;
+            font-weight: 700;
+        }
         .header-info {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
             font-size: 0.9rem;
-            color: #8b949e;
+            color: var(--text-secondary);
         }
         .header-info span { display: flex; align-items: center; gap: 6px; }
         .badge {
-            background: #21262d;
-            padding: 4px 10px;
+            background: rgba(33, 38, 45, 0.8);
+            padding: 4px 12px;
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 500;
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(4px);
         }
-        .badge.running { background: #238636; color: #fff; }
-        .badge.waiting { background: #9e6a03; color: #fff; }
-        .badge.done { background: #8957e5; color: #fff; }
-        .badge.replanning { background: #9e6a03; color: #fff; }
+        .badge.running {
+            background: linear-gradient(135deg, rgba(35, 134, 54, 0.8), rgba(46, 160, 67, 0.8));
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(35, 134, 54, 0.3);
+        }
+        .badge.waiting {
+            background: linear-gradient(135deg, rgba(158, 106, 3, 0.8), rgba(187, 128, 9, 0.8));
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(158, 106, 3, 0.3);
+        }
+        .badge.done {
+            background: linear-gradient(135deg, rgba(137, 87, 229, 0.8), rgba(139, 100, 232, 0.8));
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(137, 87, 229, 0.3);
+        }
+        .badge.replanning {
+            background: linear-gradient(135deg, rgba(158, 106, 3, 0.8), rgba(187, 128, 9, 0.8));
+            color: #fff;
+        }
         .progress-bar {
-            background: #21262d;
-            height: 8px;
-            border-radius: 4px;
-            margin-top: 15px;
+            background: rgba(33, 38, 45, 0.6);
+            height: 10px;
+            border-radius: 5px;
+            margin-top: 18px;
             overflow: hidden;
+            border: 1px solid var(--glass-border);
         }
         .progress-fill {
-            background: linear-gradient(90deg, #238636, #2ea043);
+            background: linear-gradient(90deg, #238636, #2ea043, #3fb950);
             height: 100%;
-            border-radius: 4px;
-            transition: width 0.3s ease;
+            border-radius: 5px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 20px rgba(35, 134, 54, 0.4);
         }
         .controls {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 15px 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 16px 24px;
             margin-bottom: 20px;
             display: flex;
-            gap: 10px;
+            gap: 12px;
             align-items: center;
             flex-wrap: wrap;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
         button {
-            background: #238636;
+            background: linear-gradient(135deg, #238636, #2ea043);
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
+            padding: 10px 24px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 0.9rem;
-            font-weight: 500;
-            transition: background 0.2s;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(35, 134, 54, 0.3);
         }
-        button:hover { background: #2ea043; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        button.stop { background: #da3633; }
-        button.stop:hover { background: #f85149; }
-        button.request-changes { background: #9e6a03; }
-        button.request-changes:hover { background: #bb8009; }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(35, 134, 54, 0.4);
+        }
+        button:active { transform: translateY(0); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        button.stop {
+            background: linear-gradient(135deg, #da3633, #f85149);
+            box-shadow: 0 4px 15px rgba(218, 54, 51, 0.3);
+        }
+        button.stop:hover { box-shadow: 0 6px 20px rgba(218, 54, 51, 0.4); }
+        button.request-changes {
+            background: linear-gradient(135deg, #9e6a03, #bb8009);
+            box-shadow: 0 4px 15px rgba(158, 106, 3, 0.3);
+        }
+        button.request-changes:hover { box-shadow: 0 6px 20px rgba(158, 106, 3, 0.4); }
+        button.secondary {
+            background: rgba(33, 38, 45, 0.8);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        button.secondary:hover { background: rgba(48, 54, 61, 0.9); }
         button.hidden { display: none; }
         .replanning-banner {
-            background: #1c2128;
-            border: 1px solid #9e6a03;
-            border-radius: 8px;
-            padding: 14px 20px;
+            background: rgba(28, 33, 40, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(158, 106, 3, 0.5);
+            border-radius: 12px;
+            padding: 16px 24px;
             margin-bottom: 20px;
             display: flex;
             align-items: center;
             gap: 12px;
             color: #e3b341;
             font-weight: 500;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
         .replanning-banner.hidden { display: none; }
         .replanning-spinner {
-            width: 18px;
-            height: 18px;
-            border: 2px solid #30363d;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(48, 54, 61, 0.5);
             border-top-color: #e3b341;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
@@ -107,279 +178,549 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .countdown { color: #8b949e; font-size: 0.9rem; margin-left: auto; }
+        .countdown {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-left: auto;
+            font-weight: 500;
+        }
         .tabs {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-bottom: 20px;
-            border-bottom: 1px solid #30363d;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 1px;
         }
         .tab {
-            padding: 10px 20px;
+            padding: 12px 24px;
             cursor: pointer;
             border-bottom: 2px solid transparent;
-            color: #8b949e;
-            transition: all 0.2s;
+            color: var(--text-secondary);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 500;
+            border-radius: 8px 8px 0 0;
         }
-        .tab:hover { color: #c9d1d9; }
-        .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+        .tab:hover {
+            color: var(--text-primary);
+            background: rgba(88, 166, 255, 0.05);
+        }
+        .tab.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+            background: rgba(88, 166, 255, 0.1);
+        }
         .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .card {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .card h2 { color: #c9d1d9; font-size: 1.1rem; margin-bottom: 15px; }
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        .card h2 {
+            color: var(--text-primary);
+            font-size: 1.2rem;
+            margin-bottom: 18px;
+            font-weight: 600;
+        }
         .task-list { list-style: none; }
         .task-list li {
-            padding: 10px 0;
-            border-bottom: 1px solid #21262d;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(33, 38, 45, 0.6);
             display: flex;
             align-items: flex-start;
-            gap: 10px;
+            gap: 12px;
+            transition: background 0.2s ease;
         }
         .task-list li:last-child { border-bottom: none; }
+        .task-list li:hover { background: rgba(88, 166, 255, 0.03); }
         .task-list input[type="checkbox"] {
             margin-top: 4px;
-            width: 16px;
-            height: 16px;
-            accent-color: #238636;
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-green);
+            cursor: pointer;
         }
-        .task-list label { flex: 1; }
+        .task-list label { flex: 1; cursor: pointer; }
         .task-list input:checked + label {
             text-decoration: line-through;
-            color: #8b949e;
+            color: var(--text-secondary);
         }
         .iteration-card {
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            margin-bottom: 10px;
+            background: rgba(13, 17, 23, 0.6);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            margin-bottom: 12px;
             overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .iteration-card:hover {
+            border-color: rgba(88, 166, 255, 0.3);
+            transform: translateX(4px);
         }
         .iteration-header {
-            padding: 15px;
-            background: #161b22;
+            padding: 18px 20px;
+            background: rgba(22, 27, 34, 0.5);
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: background 0.2s ease;
         }
-        .iteration-header:hover { background: #1c2128; }
+        .iteration-header:hover { background: rgba(28, 33, 40, 0.7); }
         .iteration-content {
-            padding: 15px;
+            padding: 20px;
             display: none;
-            border-top: 1px solid #30363d;
+            border-top: 1px solid var(--glass-border);
         }
-        .iteration-content.expanded { display: block; }
-        .status-pass { color: #3fb950; }
-        .status-fail { color: #f85149; }
-        .status-skip { color: #8b949e; }
+        .iteration-content.expanded { display: block; animation: slideDown 0.3s ease; }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .status-pass { color: #3fb950; font-weight: 600; }
+        .status-fail { color: #f85149; font-weight: 600; }
+        .status-skip { color: var(--text-secondary); }
         .timestamp { color: #6e7681; font-size: 0.85rem; }
         .current-task {
-            margin-top: 12px;
-            padding: 10px 15px;
-            background: #1c2128;
-            border-left: 3px solid #58a6ff;
-            border-radius: 0 6px 6px 0;
-            font-size: 0.9rem;
-            color: #c9d1d9;
+            margin-top: 16px;
+            padding: 14px 18px;
+            background: rgba(88, 166, 255, 0.1);
+            border-left: 4px solid var(--accent-blue);
+            border-radius: 0 10px 10px 0;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            backdrop-filter: blur(4px);
         }
         .current-task::before {
             content: "Current: ";
-            color: #8b949e;
-            font-weight: 500;
+            color: var(--accent-blue);
+            font-weight: 600;
         }
         pre {
-            background: #0d1117;
-            padding: 15px;
-            border-radius: 6px;
+            background: rgba(13, 17, 23, 0.8);
+            padding: 18px;
+            border-radius: 10px;
             overflow-x: auto;
             font-size: 0.85rem;
-            line-height: 1.5;
+            line-height: 1.6;
             white-space: pre-wrap;
+            border: 1px solid var(--glass-border);
         }
-        .plan-section { margin-bottom: 24px; }
+        .plan-section { margin-bottom: 28px; }
         .plan-section h3 {
-            color: #58a6ff;
-            font-size: 1rem;
-            margin-bottom: 12px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #30363d;
+            color: var(--accent-blue);
+            font-size: 1.1rem;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--glass-border);
+            font-weight: 600;
         }
         .plan-content {
-            font-size: 0.9rem;
-            line-height: 1.7;
-            color: #c9d1d9;
+            font-size: 0.95rem;
+            line-height: 1.8;
+            color: var(--text-primary);
         }
         .plan-content h4 {
-            color: #d2a8ff;
-            margin: 16px 0 8px 0;
-            font-size: 0.95rem;
+            color: #bc8cff;
+            margin: 18px 0 10px 0;
+            font-size: 1rem;
+            font-weight: 600;
         }
         .plan-content ul { list-style: none; padding: 0; margin: 0; }
         .plan-content ul li {
-            padding: 6px 0;
-            border-bottom: 1px solid #21262d;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(33, 38, 45, 0.6);
             display: flex;
             align-items: flex-start;
-            gap: 8px;
+            gap: 10px;
         }
         .plan-content ul li:last-child { border-bottom: none; }
         .plan-content .plan-check {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            min-width: 16px;
-            border: 1px solid #30363d;
-            border-radius: 3px;
-            margin-top: 3px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            min-width: 18px;
+            border: 1px solid var(--glass-border);
+            border-radius: 4px;
+            margin-top: 4px;
             text-align: center;
             line-height: 16px;
             font-size: 11px;
+            transition: all 0.2s ease;
         }
         .plan-content .plan-check.checked {
-            background: #238636;
-            border-color: #238636;
+            background: linear-gradient(135deg, #238636, #2ea043);
+            border-color: transparent;
             color: white;
         }
         .plan-content .plan-check.unchecked {
-            background: #21262d;
+            background: rgba(33, 38, 45, 0.5);
         }
-        .plan-content p { margin: 6px 0; }
-        .plan-content .plan-text-line { padding: 2px 0; }
+        .plan-content p { margin: 8px 0; }
+        .plan-content .plan-text-line { padding: 4px 0; }
+
+        /* Test Guide Styles */
+        .test-guide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .test-guide-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .level-section {
+            background: rgba(13, 17, 23, 0.4);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .level-section:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .level-header {
+            padding: 18px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(22, 27, 34, 0.5);
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        .level-section[data-level="1"] .level-header { border-left-color: var(--level-1-color); }
+        .level-section[data-level="2"] .level-header { border-left-color: var(--level-2-color); }
+        .level-section[data-level="3"] .level-header { border-left-color: var(--level-3-color); }
+        .level-section[data-level="4"] .level-header { border-left-color: var(--level-4-color); }
+        .level-section[data-level="5"] .level-header { border-left-color: var(--level-5-color); }
+        .level-header:hover {
+            background: rgba(28, 33, 40, 0.7);
+        }
+        .level-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .level-number {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: #0d1117;
+        }
+        .level-section[data-level="1"] .level-number { background: var(--level-1-color); }
+        .level-section[data-level="2"] .level-number { background: var(--level-2-color); }
+        .level-section[data-level="3"] .level-number { background: var(--level-3-color); }
+        .level-section[data-level="4"] .level-number { background: var(--level-4-color); }
+        .level-section[data-level="5"] .level-number { background: var(--level-5-color); }
+        .level-name {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+        .level-section[data-level="1"] .level-name { color: var(--level-1-color); }
+        .level-section[data-level="2"] .level-name { color: var(--level-2-color); }
+        .level-section[data-level="3"] .level-name { color: var(--level-3-color); }
+        .level-section[data-level="4"] .level-name { color: var(--level-4-color); }
+        .level-section[data-level="5"] .level-name { color: var(--level-5-color); }
+        .level-progress {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+        .level-content {
+            padding: 20px;
+            display: none;
+        }
+        .level-content.expanded { display: block; animation: slideDown 0.3s ease; }
+        .level-expand-icon {
+            transition: transform 0.3s ease;
+            color: var(--text-secondary);
+        }
+        .level-section.expanded .level-expand-icon { transform: rotate(180deg); }
+        .criterion-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(33, 38, 45, 0.4);
+            transition: all 0.2s ease;
+        }
+        .criterion-item:hover {
+            background: rgba(88, 166, 255, 0.03);
+            margin: 0 -12px;
+            padding-left: 12px;
+            padding-right: 12px;
+            border-radius: 8px;
+        }
+        .criterion-item:last-child { border-bottom: none; }
+        .criterion-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-top: 3px;
+            accent-color: var(--accent-green);
+            cursor: pointer;
+        }
+        .criterion-text {
+            flex: 1;
+            line-height: 1.5;
+        }
+        .criterion-item.editing .criterion-text { display: none; }
+        .criterion-edit-input {
+            flex: 1;
+            background: rgba(13, 17, 23, 0.8);
+            border: 1px solid var(--accent-blue);
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            display: none;
+        }
+        .criterion-item.editing .criterion-edit-input { display: block; }
+        .criterion-actions {
+            display: flex;
+            gap: 6px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .criterion-item:hover .criterion-actions { opacity: 1; }
+        .criterion-btn {
+            background: rgba(48, 54, 61, 0.6);
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+        .criterion-btn:hover {
+            background: rgba(88, 166, 255, 0.2);
+            color: var(--accent-blue);
+        }
+        .criterion-btn.delete:hover {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--accent-red);
+        }
+        .add-criterion-btn {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px dashed rgba(88, 166, 255, 0.4);
+            color: var(--accent-blue);
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            width: 100%;
+            margin-top: 12px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .add-criterion-btn:hover {
+            background: rgba(88, 166, 255, 0.2);
+            border-style: solid;
+        }
+        .subsection {
+            margin: 16px 0 12px 0;
+            padding-left: 16px;
+            border-left: 2px solid var(--glass-border);
+        }
+        .subsection-title {
+            font-weight: 600;
+            color: #bc8cff;
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .save-indicator {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .save-indicator.saving { color: var(--accent-blue); }
+        .save-indicator.saved { color: var(--accent-green); }
+        .save-indicator.error { color: var(--accent-red); }
+
         /* Review UI styles */
         .review-float-btn {
             position: absolute;
             display: none;
-            background: #58a6ff;
+            background: linear-gradient(135deg, #58a6ff, #79c0ff);
             color: #0d1117;
             border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 700;
             cursor: pointer;
             z-index: 100;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
             white-space: nowrap;
+            transition: all 0.2s ease;
         }
-        .review-float-btn:hover { background: #79c0ff; }
+        .review-float-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 28px rgba(0,0,0,0.6);
+        }
         .review-popover {
             position: absolute;
             display: none;
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 12px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 16px;
             z-index: 101;
-            width: 320px;
+            width: 340px;
             max-width: 90vw;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
         }
         .review-popover .review-selected-preview {
-            background: #1c2128;
-            border-left: 3px solid #58a6ff;
-            padding: 6px 10px;
-            margin-bottom: 10px;
-            font-size: 0.8rem;
-            color: #8b949e;
-            max-height: 60px;
+            background: rgba(28, 33, 40, 0.8);
+            border-left: 3px solid var(--accent-blue);
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            max-height: 80px;
             overflow: hidden;
-            border-radius: 0 4px 4px 0;
+            border-radius: 0 6px 6px 0;
         }
         .review-popover textarea {
             width: 100%;
-            background: #0d1117;
-            color: #c9d1d9;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 8px;
-            font-size: 0.85rem;
+            background: rgba(13, 17, 23, 0.8);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 0.9rem;
             font-family: inherit;
             resize: vertical;
-            min-height: 60px;
+            min-height: 80px;
         }
-        .review-popover textarea:focus { outline: none; border-color: #58a6ff; }
+        .review-popover textarea:focus { outline: none; border-color: var(--accent-blue); }
         .review-popover-actions {
             display: flex;
             justify-content: flex-end;
-            gap: 8px;
-            margin-top: 8px;
+            gap: 10px;
+            margin-top: 12px;
         }
         .review-popover-actions button {
-            padding: 6px 14px;
-            font-size: 0.8rem;
+            padding: 8px 18px;
+            font-size: 0.85rem;
             border-radius: 6px;
         }
         .review-popover-actions .review-cancel-btn {
-            background: #21262d;
-            color: #c9d1d9;
+            background: rgba(33, 38, 45, 0.8);
+            color: var(--text-primary);
+            box-shadow: none;
         }
-        .review-popover-actions .review-cancel-btn:hover { background: #30363d; }
+        .review-popover-actions .review-cancel-btn:hover { background: rgba(48, 54, 61, 0.9); }
         mark[data-review-id] {
-            background: rgba(88, 166, 255, 0.2);
-            color: #c9d1d9;
-            border-bottom: 2px solid #58a6ff;
-            padding: 1px 2px;
-            border-radius: 2px;
+            background: rgba(88, 166, 255, 0.25);
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent-blue);
+            padding: 2px 4px;
+            border-radius: 3px;
             cursor: pointer;
         }
         .review-annotation {
             display: flex;
             align-items: flex-start;
-            gap: 10px;
-            background: #1c2128;
-            border: 1px solid #30363d;
-            border-left: 3px solid #58a6ff;
-            border-radius: 0 6px 6px 0;
-            padding: 10px 12px;
-            margin: 8px 0;
-            font-size: 0.85rem;
+            gap: 12px;
+            background: rgba(28, 33, 40, 0.6);
+            border: 1px solid var(--glass-border);
+            border-left: 3px solid var(--accent-blue);
+            border-radius: 0 10px 10px 0;
+            padding: 14px 16px;
+            margin: 10px 0;
+            font-size: 0.9rem;
         }
         .review-annotation-body { flex: 1; }
         .review-annotation-quote {
-            color: #8b949e;
-            font-size: 0.8rem;
-            margin-bottom: 4px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 6px;
             font-style: italic;
         }
-        .review-annotation-comment { color: #c9d1d9; }
+        .review-annotation-comment { color: var(--text-primary); }
         .review-delete-btn {
             background: none;
             border: none;
-            color: #f85149;
+            color: var(--accent-red);
             cursor: pointer;
-            padding: 2px 6px;
-            font-size: 0.9rem;
-            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 1rem;
+            border-radius: 6px;
             min-width: auto;
+            transition: background 0.2s ease;
         }
         .review-delete-btn:hover { background: rgba(248, 81, 73, 0.15); }
         .phase-indicator {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
         .pulse {
-            width: 8px;
-            height: 8px;
-            background: #238636;
+            width: 10px;
+            height: 10px;
+            background: linear-gradient(135deg, #238636, #2ea043);
             border-radius: 50%;
             animation: pulse 2s infinite;
+            box-shadow: 0 0 10px rgba(35, 134, 54, 0.5);
         }
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(0.95); }
         }
         @media (max-width: 768px) {
-            .container { padding: 10px; }
+            .container { padding: 12px; }
             .header-info { flex-direction: column; gap: 10px; }
             .controls { flex-direction: column; align-items: stretch; }
             .countdown { margin-left: 0; text-align: center; }
+            .tabs { overflow-x: auto; gap: 4px; }
+            .tab { padding: 10px 16px; white-space: nowrap; }
+            .test-guide-header { flex-direction: column; gap: 12px; }
+            .level-header { padding: 14px 16px; }
+            .criterion-actions { opacity: 1; }
         }
     </style>
 </head>
@@ -418,6 +759,7 @@
             <div class="tab active" data-tab="tasks">Tasks</div>
             <div class="tab" data-tab="plan">Plan</div>
             <div class="tab" data-tab="acceptance">Acceptance</div>
+            <div class="tab" data-tab="test-guide">Test Guide</div>
             <div class="tab" data-tab="history">History</div>
         </div>
 
@@ -452,6 +794,26 @@
             </div>
         </div>
 
+        <div class="tab-content" id="tab-test-guide">
+            <div class="card">
+                <div class="test-guide-header">
+                    <h2>Test Guide</h2>
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <span id="test-guide-save-status" class="save-indicator"></span>
+                        <div class="test-guide-actions">
+                            <button id="btn-add-level" class="secondary">+ Add Level</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="test-guide-content">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#128208;</div>
+                        <p>Loading test guide...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="tab-content" id="tab-history">
             <div class="card">
                 <h2>Iteration History</h2>
@@ -473,6 +835,28 @@
     <script>
         let state = null;
         let pollInterval = null;
+        let testGuideData = null;
+        let testGuideSaveTimeout = null;
+
+        // Test Guide State
+        const defaultTestGuide = `# Test Guide
+
+## Level 1: Syntax (Does it run?)
+- [ ] Code compiles without errors
+- [ ] No linting warnings
+
+## Level 2: I/O (Does it work?)
+- [ ] Core functions return expected outputs
+
+## Level 3: Property (What invariants hold?)
+- [ ] Properties hold for all valid inputs
+
+## Level 4: Formal (What are the business rules?)
+- [ ] Business rules are enforced
+
+## Level 5: Semantic (Does it meet user intent?)
+- [ ] User scenarios pass
+`;
 
         function parseMarkdownCheckboxes(md) {
             if (!md) return [];
@@ -778,6 +1162,11 @@
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+
+                // Load test guide when switching to that tab
+                if (tab.dataset.tab === 'test-guide') {
+                    loadTestGuide();
+                }
             });
         });
 
@@ -1007,6 +1396,390 @@
                 hidePopover();
             }
         });
+
+        // ── Test Guide Management ──
+
+        function parseTestGuide(content) {
+            const lines = content.split('\n');
+            const levels = [];
+            let currentLevel = null;
+            let currentSubsection = null;
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+
+                // Parse level headers (## Level X: Name)
+                const levelMatch = trimmed.match(/^## Level (\d+):\s*(.+)$/);
+                if (levelMatch) {
+                    currentLevel = {
+                        level: parseInt(levelMatch[1]),
+                        name: levelMatch[2],
+                        criteria: [],
+                        subsections: []
+                    };
+                    levels.push(currentLevel);
+                    currentSubsection = null;
+                    continue;
+                }
+
+                // Parse subsections (### Name)
+                const subsectionMatch = trimmed.match(/^###\s*(.+)$/);
+                if (subsectionMatch && currentLevel) {
+                    currentSubsection = {
+                        name: subsectionMatch[1],
+                        criteria: []
+                    };
+                    currentLevel.subsections.push(currentSubsection);
+                    continue;
+                }
+
+                // Parse criteria (- [ ] or - [x])
+                const criteriaMatch = trimmed.match(/^- \[(.)\]\s*(.+)$/);
+                if (criteriaMatch && currentLevel) {
+                    const criterion = {
+                        checked: criteriaMatch[1] === 'x',
+                        text: criteriaMatch[2],
+                        id: 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+                    };
+                    if (currentSubsection) {
+                        currentSubsection.criteria.push(criterion);
+                    } else {
+                        currentLevel.criteria.push(criterion);
+                    }
+                }
+            }
+
+            return levels;
+        }
+
+        function testGuideToMarkdown(levels) {
+            const parts = ['# Test Guide\n'];
+
+            for (const level of levels) {
+                parts.push(`## Level ${level.level}: ${level.name}\n`);
+
+                // Direct criteria
+                for (const c of level.criteria) {
+                    parts.push(`- [${c.checked ? 'x' : ' '}] ${c.text}\n`);
+                }
+
+                // Subsections
+                for (const sub of level.subsections) {
+                    parts.push(`\n### ${sub.name}\n`);
+                    for (const c of sub.criteria) {
+                        parts.push(`- [${c.checked ? 'x' : ' '}] ${c.text}\n`);
+                    }
+                }
+
+                parts.push('\n');
+            }
+
+            return parts.join('');
+        }
+
+        function renderTestGuide() {
+            const container = document.getElementById('test-guide-content');
+
+            if (!testGuideData || testGuideData.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#128221;</div>
+                        <p>No test guide found. Click "+ Add Level" to create one.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = testGuideData.map(level => {
+                const totalCriteria = level.criteria.length +
+                    level.subsections.reduce((sum, s) => sum + s.criteria.length, 0);
+                const checkedCriteria = level.criteria.filter(c => c.checked).length +
+                    level.subsections.reduce((sum, s) => sum + s.criteria.filter(c => c.checked).length, 0);
+
+                return `
+                    <div class="level-section" data-level="${level.level}">
+                        <div class="level-header" onclick="toggleLevel(${level.level})">
+                            <div class="level-title">
+                                <span class="level-number">${level.level}</span>
+                                <span class="level-name">${escapeHtml(level.name)}</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span class="level-progress">${checkedCriteria}/${totalCriteria}</span>
+                                <span class="level-expand-icon">&#9662;</span>
+                            </div>
+                        </div>
+                        <div class="level-content" id="level-content-${level.level}">
+                            ${renderCriteria(level.criteria, level.level)}
+                            ${level.subsections.map(sub => `
+                                <div class="subsection">
+                                    <div class="subsection-title">${escapeHtml(sub.name)}</div>
+                                    ${renderCriteria(sub.criteria, level.level, sub.name)}
+                                </div>
+                            `).join('')}
+                            <button class="add-criterion-btn" onclick="addCriterion(${level.level})">
+                                + Add Criterion
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCriteria(criteria, levelNum, subsectionName = null) {
+            if (criteria.length === 0) return '';
+            return criteria.map((c, idx) => `
+                <div class="criterion-item" data-id="${c.id}" data-level="${levelNum}" data-subsection="${subsectionName || ''}">
+                    <input type="checkbox" ${c.checked ? 'checked' : ''} onchange="toggleCriterion('${c.id}')">
+                    <span class="criterion-text">${escapeHtml(c.text)}</span>
+                    <input type="text" class="criterion-edit-input" value="${escapeHtml(c.text)}" onblur="saveCriterionEdit('${c.id}')" onkeydown="handleEditKey(event, '${c.id}')">
+                    <div class="criterion-actions">
+                        <button class="criterion-btn" onclick="editCriterion('${c.id}')" title="Edit">&#9998;</button>
+                        <button class="criterion-btn delete" onclick="deleteCriterion('${c.id}')" title="Delete">&times;</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleLevel(levelNum) {
+            const section = document.querySelector(`.level-section[data-level="${levelNum}"]`);
+            const content = document.getElementById(`level-content-${levelNum}`);
+            section.classList.toggle('expanded');
+            content.classList.toggle('expanded');
+        }
+
+        function toggleCriterion(id) {
+            for (const level of testGuideData) {
+                for (const c of level.criteria) {
+                    if (c.id === id) {
+                        c.checked = !c.checked;
+                        scheduleSaveTestGuide();
+                        renderTestGuide();
+                        return;
+                    }
+                }
+                for (const sub of level.subsections) {
+                    for (const c of sub.criteria) {
+                        if (c.id === id) {
+                            c.checked = !c.checked;
+                            scheduleSaveTestGuide();
+                            renderTestGuide();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        function addCriterion(levelNum, subsectionName = null) {
+            const level = testGuideData.find(l => l.level === levelNum);
+            if (!level) return;
+
+            const newCriterion = {
+                checked: false,
+                text: 'New criterion (click to edit)',
+                id: 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+            };
+
+            if (subsectionName) {
+                const sub = level.subsections.find(s => s.name === subsectionName);
+                if (sub) sub.criteria.push(newCriterion);
+            } else {
+                level.criteria.push(newCriterion);
+            }
+
+            renderTestGuide();
+            scheduleSaveTestGuide();
+
+            // Auto-expand the level
+            const section = document.querySelector(`.level-section[data-level="${levelNum}"]`);
+            const content = document.getElementById(`level-content-${levelNum}`);
+            section.classList.add('expanded');
+            content.classList.add('expanded');
+
+            // Focus the new criterion for editing
+            setTimeout(() => {
+                editCriterion(newCriterion.id);
+            }, 50);
+        }
+
+        function editCriterion(id) {
+            const item = document.querySelector(`.criterion-item[data-id="${id}"]`);
+            if (item) {
+                item.classList.add('editing');
+                const input = item.querySelector('.criterion-edit-input');
+                input.focus();
+                input.select();
+            }
+        }
+
+        function saveCriterionEdit(id) {
+            const item = document.querySelector(`.criterion-item[data-id="${id}"]`);
+            if (!item) return;
+
+            const input = item.querySelector('.criterion-edit-input');
+            const newText = input.value.trim();
+
+            if (newText) {
+                for (const level of testGuideData) {
+                    for (const c of level.criteria) {
+                        if (c.id === id) {
+                            c.text = newText;
+                            scheduleSaveTestGuide();
+                            renderTestGuide();
+                            return;
+                        }
+                    }
+                    for (const sub of level.subsections) {
+                        for (const c of sub.criteria) {
+                            if (c.id === id) {
+                                c.text = newText;
+                                scheduleSaveTestGuide();
+                                renderTestGuide();
+                                return;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // If empty, delete the criterion
+                deleteCriterion(id);
+            }
+        }
+
+        function handleEditKey(event, id) {
+            if (event.key === 'Enter') {
+                saveCriterionEdit(id);
+            } else if (event.key === 'Escape') {
+                renderTestGuide();
+            }
+        }
+
+        function deleteCriterion(id) {
+            if (!confirm('Delete this criterion?')) return;
+
+            for (const level of testGuideData) {
+                level.criteria = level.criteria.filter(c => c.id !== id);
+                for (const sub of level.subsections) {
+                    sub.criteria = sub.criteria.filter(c => c.id !== id);
+                }
+            }
+
+            renderTestGuide();
+            scheduleSaveTestGuide();
+        }
+
+        function addNewLevel() {
+            const levelNum = testGuideData.length + 1;
+            const levelNames = {
+                1: 'Syntax (Does it run?)',
+                2: 'I/O (Does it work?)',
+                3: 'Property (What invariants hold?)',
+                4: 'Formal (What are the business rules?)',
+                5: 'Semantic (Does it meet user intent?)',
+                6: 'Additional Tests'
+            };
+
+            const newLevel = {
+                level: levelNum,
+                name: levelNames[levelNum] || `Level ${levelNum}`,
+                criteria: [
+                    {
+                        checked: false,
+                        text: 'New criterion (click to edit)',
+                        id: 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+                    }
+                ],
+                subsections: []
+            };
+
+            testGuideData.push(newLevel);
+            renderTestGuide();
+            scheduleSaveTestGuide();
+
+            // Auto-expand the new level
+            setTimeout(() => {
+                toggleLevel(levelNum);
+            }, 50);
+        }
+
+        function scheduleSaveTestGuide() {
+            const statusEl = document.getElementById('test-guide-save-status');
+            statusEl.textContent = 'Unsaved changes...';
+            statusEl.className = 'save-indicator saving';
+
+            if (testGuideSaveTimeout) {
+                clearTimeout(testGuideSaveTimeout);
+            }
+
+            testGuideSaveTimeout = setTimeout(() => {
+                saveTestGuide();
+            }, 1000);
+        }
+
+        async function saveTestGuide() {
+            const statusEl = document.getElementById('test-guide-save-status');
+            statusEl.textContent = 'Saving...';
+            statusEl.className = 'save-indicator saving';
+
+            const content = testGuideToMarkdown(testGuideData);
+
+            try {
+                const res = await fetch('/test-guide', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content })
+                });
+
+                if (res.ok) {
+                    statusEl.textContent = 'Saved!';
+                    statusEl.className = 'save-indicator saved';
+                    setTimeout(() => {
+                        statusEl.textContent = '';
+                    }, 2000);
+                } else {
+                    throw new Error('Failed to save');
+                }
+            } catch (e) {
+                statusEl.textContent = 'Save failed';
+                statusEl.className = 'save-indicator error';
+                console.error('Failed to save test guide:', e);
+            }
+        }
+
+        async function loadTestGuide() {
+            const statusEl = document.getElementById('test-guide-save-status');
+            statusEl.textContent = 'Loading...';
+            statusEl.className = 'save-indicator';
+
+            try {
+                const res = await fetch('/test-guide');
+                if (res.ok) {
+                    const data = await res.json();
+                    const content = data.content || defaultTestGuide;
+                    testGuideData = parseTestGuide(content);
+                    renderTestGuide();
+
+                    // Expand first level by default
+                    if (testGuideData.length > 0) {
+                        setTimeout(() => toggleLevel(1), 50);
+                    }
+
+                    statusEl.textContent = '';
+                } else {
+                    throw new Error('Failed to load');
+                }
+            } catch (e) {
+                statusEl.textContent = 'Load failed';
+                statusEl.className = 'save-indicator error';
+                console.error('Failed to load test guide:', e);
+
+                // Use default
+                testGuideData = parseTestGuide(defaultTestGuide);
+                renderTestGuide();
+            }
+        }
+
+        document.getElementById('btn-add-level').addEventListener('click', addNewLevel);
 
         pollInterval = setInterval(fetchState, 2000);
         fetchState();
