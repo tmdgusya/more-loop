@@ -595,6 +595,61 @@ EOF
   maybe_write_state "bootstrap"
 }
 
+run_oracle_phase() {
+  log "[Oracle] Test-First Architect phase — building Test Guide"
+
+  maybe_write_state "oracle"
+
+  local spec
+  spec="$(cat "$PROMPT_FILE")"
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt oracle)"
+
+  local prompt
+  IFS= read -r -d "" prompt <<EOF || true
+You are the Oracle — a Test-First Architect agent.
+
+Your job is to help the user write a comprehensive Test Guide that defines
+"correctness" BEFORE implementation begins.
+
+## Spec:
+${spec}
+
+## Instructions:
+1. Read the spec carefully
+2. Guide the user through the 5 Oracle levels (Syntax, I/O, Property, Formal, Semantic)
+3. Ask specific questions to build testable criteria
+4. Document everything in ${RUN_DIR}/test-guide.md
+5. Get user approval before completing
+
+Use the AskUserQuestion tool to interact with the user.
+Do NOT proceed to the next level until the current level has sufficient criteria.
+Do NOT accept vague answers — every criterion must be specific and testable.
+
+The Test Guide will be used during task iterations to provide context about
+what "correct" means for each implementation task.
+EOF
+
+  local output
+  if ! output="$(run_claude "$prompt" "$sys_prompt")"; then
+    log_fail "Oracle phase failed"
+    echo "$output" > "${RUN_DIR}/iterations/oracle.md"
+    return 1
+  fi
+
+  echo "$output" > "${RUN_DIR}/iterations/oracle.md"
+
+  # Verify test-guide.md was created
+  if [[ ! -f "${RUN_DIR}/test-guide.md" ]]; then
+    log_warn "Oracle phase completed but test-guide.md not found"
+    return 1
+  fi
+
+  log_pass "[Oracle] Test Guide created at ${RUN_DIR}/test-guide.md"
+  maybe_write_state "bootstrap"
+}
+
 count_remaining() {
   if [[ -f "${RUN_DIR}/tasks.md" ]]; then
     grep -c '^\- \[ \]' "${RUN_DIR}/tasks.md" || true
