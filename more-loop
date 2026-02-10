@@ -1396,6 +1396,23 @@ main() {
     fi
   fi
 
+  # Oracle phase (if enabled)
+  if [[ "$ORACLE_MODE" == "true" ]]; then
+    if ! run_oracle_phase; then
+      log_warn "Oracle phase failed, continuing without Test Guide"
+    fi
+    echo ""
+
+    # Approval checkpoint after Oracle
+    if [[ "$APPROVE_MODE" == "true" ]]; then
+      if ! wait_for_approval "oracle"; then
+        log "Run stopped by user"
+        maybe_write_state "done"
+        exit 0
+      fi
+    fi
+  fi
+
   # Main loop
   local iter="$start_iter"
   while [[ $iter -le $MAX_ITERATIONS ]]; do
