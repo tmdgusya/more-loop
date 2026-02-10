@@ -31,9 +31,25 @@ make link                 # Symlink for development (edits reflected immediately
 - `Makefile` — Make targets for install/link/uninstall
 - `system-prompts/` — Phase-specific system prompts injected via `--append-system-prompt`
   - `bootstrap.md` — Controls task count and granularity during bootstrap
+  - `oracle.md` — Test-First Architect phase for creating Test Guides
   - `task.md` — Enforces single-task-per-iteration protocol
   - `improve.md` — Guides improvement mode behavior
 - `.claude/skills/more-loop-prompt/SKILL.md` — Skill: create prompt files
 - `.claude/skills/more-loop-verify/SKILL.md` — Skill: create verification files
 - `README.md` — Full documentation
 - `CLAUDE.md` — This file
+
+## more-loop Architecture Notes
+
+- `system-prompts/` — phase-specific prompts injected via `--append-system-prompt`
+  - `bootstrap.md` — Controls task count and granularity during bootstrap
+  - `oracle.md` — Test-First Architect phase for creating Test Guides
+  - `task.md` — Enforces single-task-per-iteration protocol
+  - `improve.md` — Guides improvement mode behavior
+- `enforce_single_task()` allows up to 3 tasks per iteration (configurable via `max_per_iter`)
+- `enforce_max_tasks` in bootstrap truncates task list if Claude exceeds limit
+- Verify for `.md` files should only evaluate items relevant to the current iteration's task
+- Default model: opus
+- `--resume` flag skips bootstrap and continues from last completed iteration
+- `--oracle` flag enables Test-First Architect phase before task iterations
+- `test-guide.md` — Oracle output file containing 5-level test criteria used as context during iterations
