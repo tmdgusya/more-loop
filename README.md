@@ -12,6 +12,205 @@ Iterative development script that wraps the `claude` CLI in a while loop.
 
 Each iteration is a fresh `claude -p` process with `--permission-mode bypassPermissions`. State is passed via files in `.more-loop/<run-name>/`.
 
+## Walkthrough: Complete Workflow
+
+Let's walk through building a simple calculator API to see how more-loop works in practice.
+
+### Step 1: Create your spec
+
+```bash
+# Use the interactive wizard to create a spec file
+/more-loop-prompt calculator-api
+```
+
+Answer the questions:
+- **What to build?** → "A REST API for a calculator"
+- **Tech stack?** → "Python, FastAPI, pytest"
+- **Key features?** → "add, subtract, multiply, divide endpoints"
+
+This creates `.more-loop/runs/calculator-api/prompt.md`
+
+### Step 2: (Optional) Create a verification plan
+
+```bash
+# Use the interactive wizard to create verification
+/more-loop-verify calculator-api
+```
+
+Define how to verify correctness:
+- **Tests pass?** → `pytest tests/ -v`
+- **API works?** → `curl http://localhost:8000/calculate`
+- **Type checks?** → `mypy .`
+
+This creates `.more-loop/runs/calculator-api/verify.sh`
+
+### Step 3: Run with Oracle (recommended!)
+
+```bash
+# The --oracle flag enables Test-First Architect
+more-loop --oracle -n 10 calculator-api verify.sh
+```
+
+**What happens next:**
+
+#### Phase 1: Bootstrap
+- Claude reads `prompt.md`
+- Creates `acceptance.md` (definition of done)
+- Creates `tasks.md` (implementation steps)
+- Example tasks:
+  ```
+  - [ ] Set up FastAPI project structure
+  - [ ] Implement /calculate endpoint
+  - [ ] Add add, subtract, multiply, divide operations
+  - [ ] Add input validation
+  - [ ] Write unit tests
+  ```
+
+#### Phase 2: Oracle (NEW!)
+- Claude acts as **Test-First Architect**
+- Guides you through 5 levels:
+
+**Level 1: Syntax (Does it run?)**
+```
+Oracle: "What build commands should pass?"
+You: "pytest tests/ should pass and mypy . should succeed"
+
+Oracle: "What type checking?"
+You: "Python 3.11+ with strict mode"
+
+Oracle: "Any linting?"
+You: "ruff check . with zero warnings"
+```
+
+**Level 2: I/O (Does it work?)**
+```
+Oracle: "What are your core functions?"
+You: "add(a, b) returns sum, divide(a, b) returns quotient or raises error"
+
+Oracle: "What about edge cases?"
+You: "divide by zero raises ZeroDivisionError, divide by negative numbers works"
+```
+
+**Level 3: Property (What invariants hold?)**
+```
+Oracle: "What mathematical properties?"
+You: "For all a, b: add(a, b) == add(b, a) (commutative)"
+```
+
+**Level 4: Formal (Business rules)**
+```
+Oracle: "What are your business constraints?"
+You: "Results are always finite numbers (no NaN or Infinity)"
+```
+
+**Level 5: Semantic (User intent)**
+```
+Oracle: "What are your user scenarios?"
+You: "Given valid numbers, when user sends POST /calculate with operation='add',
+       then they get the sum within 100ms"
+```
+
+- Oracle creates `test-guide.md` with all your criteria
+- This becomes your "answer key" for implementation!
+
+#### Phase 3: Task Iterations
+
+Now each iteration gets your Test Guide as context:
+
+```bash
+Iteration 1: "Set up FastAPI project structure"
+```
+
+Claude sees:
+```
+## Test Guide (Oracle output):
+### Level 1: Syntax
+- [ ] pytest tests/ passes
+- [ ] mypy . passes
+
+### Level 2: I/O
+- [ ] add(a, b) returns sum
+...
+```
+
+So Claude **knows** to:
+- Create `pyproject.toml` with pytest config
+- Add `mypy` configuration
+- Set up project structure
+
+```bash
+Iteration 2: "Implement /calculate endpoint"
+```
+
+Claude sees the Test Guide and knows:
+- Must accept POST requests
+- Must validate inputs
+- Must return JSON results
+- Must handle division by zero
+
+#### Phase 4: Audit (when all tasks done)
+
+Once all tasks are checked off, Claude reviews the **actual code**:
+- Reads implementation files
+- Rates each task: SOLID / WEAK / INCOMPLETE
+- Identifies specific issues
+
+#### Phase 5: Improve (remaining iterations)
+
+Claude fixes issues found in audit:
+- "Found: No error handling for negative numbers in multiply()"
+- "Fixed: Added validation and proper error messages"
+
+### Step 4: Check your results
+
+After completion, inspect `.more-loop/runs/calculator-api/`:
+
+```bash
+.more-loop/runs/calculator-api/
+├── prompt.md           # Your original spec
+├── acceptance.md       # Definition of done (all checked ✓)
+├── tasks.md            # Implementation steps (all checked ✓)
+├── test-guide.md       # Your Test Guide from Oracle
+├── iterations/
+│   ├── 0-bootstrap.md
+│   ├── 1.md             # Task 1 implementation
+│   ├── 1-verify.md     # Verification result
+│   ├── 2.md             # Task 2 implementation
+│   ...
+│   └── audit.md         # Audit findings
+└── state.json          # Full state history
+```
+
+### Key Benefits of Using Oracle
+
+**Without Oracle:**
+- "Hope the code is good"
+- Discover issues during testing (too late!)
+- Vague acceptance criteria
+
+**With Oracle:**
+- "Here's exactly what 'correct' means"
+- Claude knows requirements before coding
+- Concrete testable criteria for every level
+- Your Test Guide becomes documentation
+
+### Pro Tips
+
+1. **Always use `--oracle`** for new projects - it saves time!
+2. **Be specific** in Oracle - vague criteria get rejected
+3. **Use `--approve`** - review the plan before implementation starts
+4. **Check `test-guide.md`** after Oracle completes - this is your spec!
+5. **Create verify.sh** - automated tests catch regressions
+
+### Resume if interrupted
+
+```bash
+# If Ctrl+C or error stops you
+more-loop --resume .more-loop/calculator-api -n 5 verify.sh
+```
+
+Bootstrap is skipped, iterations continue from where you left off!
+
 ## Quick start
 
 ```bash

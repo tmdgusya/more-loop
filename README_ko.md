@@ -12,6 +12,205 @@
 
 매 iteration은 `--permission-mode bypassPermissions`를 가진 새로운 `claude -p` 프로세스. 상태는 `.more-loop/<run-name>/` 내 파일로 전달됩니다.
 
+## 전체 워크플로우 안내
+
+간단한 계산기 API를 구축하는 과정을 통해 more-loop가 실제로 어떻게 작동하는지 살펴보겠습니다.
+
+### Step 1: 스펙 작성
+
+```bash
+# 대화형 위자드로 스펙 파일 생성
+/more-loop-prompt calculator-api
+```
+
+질문에 답변:
+- **무엇을 만들까요?** → "계산기를 위한 REST API"
+- **기술 스택은?** → "Python, FastAPI, pytest"
+- **핵심 기능은?** → "add, subtract, multiply, divide 엔드포인트"
+
+이렇게 하면 `.more-loop/runs/calculator-api/prompt.md`가 생성됩니다.
+
+### Step 2: (선택사항) 검증 계획 작성
+
+```bash
+# 대화형 위자드로 검증 생성
+/more-loop-verify calculator-api
+```
+
+정확성을 검증하는 방법 정의:
+- **테스트 통과?** → `pytest tests/ -v`
+- **API 작동?** → `curl http://localhost:8000/calculate`
+- **타입 체크?** → `mypy .`
+
+이렇게 하면 `.more-loop/runs/calculator-api/verify.sh`가 생성됩니다.
+
+### Step 3: Oracle과 함께 실행 (권장!)
+
+```bash
+# --oracle 플래그가 Test-First Architect를 활성화합니다
+more-loop --oracle -n 10 calculator-api verify.sh
+```
+
+**다음 단계가 진행됩니다:**
+
+#### Phase 1: Bootstrap
+- Claude가 `prompt.md`를 읽음
+- `acceptance.md` (완료 기준) 생성
+- `tasks.md` (구현 단계) 생성
+- 예시 태스크:
+  ```
+  - [ ] FastAPI 프로젝트 구조 설정
+  - [ ] /calculate 엔드포인트 구현
+  - [ ] add, subtract, multiply, divide 연산 추가
+  - [ ] 입력 검증 추가
+  - [ ] 유닛 테스트 작성
+  ```
+
+#### Phase 2: Oracle (NEW!)
+- Claude가 **Test-First Architect**로 작동
+- 5가지 레벨을 안내:
+
+**Level 1: Syntax (실행되는가?)**
+```
+Oracle: "어떤 빌드 명령이 통과해야 할까요?"
+You: "pytest tests/가 통과해야 하고 mypy .가 성공해야 해요"
+
+Oracle: "어떤 타입 체크를 할까요?"
+You: "Python 3.11+에 strict 모드로요"
+
+Oracle: "린트는요?"
+You: "ruff check .에 경고가 없어야 해요"
+```
+
+**Level 2: I/O (작동하는가?)**
+```
+Oracle: "핵심 함수는 무엇인가요?"
+You: "add(a, b)는 합계를 반환, divide(a, b)는 몫을 반환하거나 에러를 발생시켜요"
+
+Oracle: "엣지 케이스는요?"
+You: "divide by zero는 ZeroDivisionError 발생, 음수 나누기는 정상 작동"
+```
+
+**Level 3: Property (어떤 불변식이 있는가?)**
+```
+Oracle: "수학적 성질은 무엇인가요?"
+You: "모든 a, b에 대해: add(a, b) == add(b, a) (교환법칙)"
+```
+
+**Level 4: Formal (비즈니스 규칙)**
+```
+Oracle: "비즈니스 제약조건은?"
+You: "결과는 항상 유한한 수여야 함 (NaN이나 Infinity 허용 안 함)"
+```
+
+**Level 5: Semantic (사용자 의도)**
+```
+Oracle: "사용자 시나리오는?"
+You: "유효한 숫자가 주어졌을 때, 사용자가 operation='add'로 POST /calculate를 보내면
+       100ms 내에 합계를 받아야 해요"
+```
+
+- Oracle이 모든 기준을 포함한 `test-guide.md` 생성
+- 이것이 구현을 위한 "정답지"가 됩니다!
+
+#### Phase 3: 태스크 반복
+
+이제 각 iteration은 Test Guide를 컨텍스트로 받습니다:
+
+```bash
+Iteration 1: "FastAPI 프로젝트 구조 설정"
+```
+
+Claude는 다음을 확인:
+```
+## Test Guide (Oracle 출력):
+### Level 1: Syntax
+- [ ] pytest tests/ 통과
+- [ ] mypy . 통과
+
+### Level 2: I/O
+- [ ] add(a, b)는 합계 반환
+...
+```
+
+그래서 Claude **알고** 있습니다:
+- pytest 설정이 포함된 `pyproject.toml` 생성
+- `mypy` 설정 추가
+- 프로젝트 구조 설정
+
+```bash
+Iteration 2: "/calculate 엔드포인트 구현"
+```
+
+Claude는 Test Guide를 보고 알게 됨:
+- POST 요청 수락
+- 입력 검증
+- JSON 결과 반환
+- divide by zero 처리
+
+#### Phase 4: Audit (모든 태스크 완료 시)
+
+모든 태스크가 체크되면 Claude가 **실제 코드**를 검토:
+- 구현 파일 읽기
+- 각 태스크 평가: SOLID / WEAK / INCOMPLETE
+- 구체적 이슈 식별
+
+#### Phase 5: Improve (남은 iteration)
+
+Audit에서 발견된 이슈를 Claude가 수정:
+- "발견: multiply()에 음수 처리 없음"
+- "수정 완료: 검증과 적절한 에러 메시지 추가"
+
+### Step 4: 결과 확인
+
+완료 후 `.more-loop/runs/calculator-api/`를 확인:
+
+```bash
+.more-loop/runs/calculator-api/
+├── prompt.md           # 원래 스펙
+├── acceptance.md       # 완료 기준 (모두 체크 ✓)
+├── tasks.md            # 구현 단계 (모두 체크 ✓)
+├── test-guide.md       # Oracle에서 작성한 Test Guide
+├── iterations/
+│   ├── 0-bootstrap.md
+│   ├── 1.md             # 태스크 1 구현
+│   ├── 1-verify.md     # 검증 결과
+│   ├── 2.md             # 태스크 2 구현
+│   ...
+│   └── audit.md         # Audit 결과
+└── state.json          # 전체 상태 기록
+```
+
+### Oracle 사용의 핵심 장점
+
+**Oracle 없이:**
+- "코드가 잘 되어 있기를 바란다"
+- 테스트 중 이슈 발견 (너무 늦음!)
+- 모호한 완료 기준
+
+**Oracle 사용 시:**
+- "'올바름'이 정확히 무엇인지 명세"
+- 코딩 전에 Claude가 요구사항을 인지
+- 모든 레벨의 구체적이고 테스트 가능한 기준
+- Test Guide가 문서화 역할
+
+### 프로 팁
+
+1. **항상 `--oracle` 사용** - 새 프로젝트에서 시간 절약!
+2. **Oracle에서 구체적으로** - 모호한 기준은 거절됨
+3. **`--approve` 사용** - 구현 시작 전 계획 검토
+4. **`test-guide.md` 확인** - Oracle 완료 후 이 파일이 스펙!
+5. **`verify.sh` 생성** - 자동화된 테스트가 회귀를 잡음
+
+### 중단된 경우 이어하기
+
+```bash
+# Ctrl+C나 에러로 멈췄을 때
+more-loop --resume .more-loop/calculator-api -n 5 verify.sh
+```
+
+Bootstrap은 건너뛰고, 중단된 지점부터 iteration이 계속됩니다!
+
 ## 빠른 시작
 
 ```bash
