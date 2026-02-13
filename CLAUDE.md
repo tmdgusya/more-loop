@@ -5,7 +5,7 @@ Iterative development script that wraps the `claude` CLI in a while loop.
 ## How it works
 
 1. **Bootstrap** — Claude reads a spec file and generates `acceptance.md` (definition of done) and `tasks.md` (atomic implementation steps) as `- [ ]` checklists
-2. **Loop** — Each iteration: pick one task → implement it → verify → if fail, retry next iteration
+2. **Loop** — Each iteration: pick one task → implement it → honesty check → verify → if fail, retry next iteration
 3. **Improve** — If all tasks finish before N iterations, Claude picks improvements (refactor, tests, etc.)
 
 Each iteration is a fresh `claude -p` process with `--permission-mode bypassPermissions`. State is passed via files in `.more-loop/<run-name>/`.
@@ -34,6 +34,7 @@ make link                 # Symlink for development (edits reflected immediately
   - `oracle.md` — Test-First Architect phase for creating Test Guides
   - `task.md` — Enforces single-task-per-iteration protocol
   - `improve.md` — Guides improvement mode behavior
+  - `honesty.md` — Honesty verification agent protocol for task completion validation
 - `.claude/skills/more-loop-prompt/SKILL.md` — Skill: create prompt files
 - `.claude/skills/more-loop-verify/SKILL.md` — Skill: create verification files
 - `README.md` — Full documentation
@@ -46,6 +47,7 @@ make link                 # Symlink for development (edits reflected immediately
   - `oracle.md` — Test-First Architect phase for creating Test Guides
   - `task.md` — Enforces single-task-per-iteration protocol
   - `improve.md` — Guides improvement mode behavior
+  - `honesty.md` — Honesty verification agent protocol for task completion validation
 - `enforce_single_task()` allows up to 3 tasks per iteration (configurable via `max_per_iter`)
 - `enforce_max_tasks` in bootstrap truncates task list if Claude exceeds limit
 - Verify for `.md` files should only evaluate items relevant to the current iteration's task
