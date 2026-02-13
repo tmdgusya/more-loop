@@ -13,6 +13,8 @@ install: ## Copy more-loop binary and skills
 	mkdir -p $(BIN_DIR)
 	cp $(REPO_DIR)more-loop $(BIN_DIR)/more-loop
 	chmod +x $(BIN_DIR)/more-loop
+	cp $(REPO_DIR)multi-loop $(BIN_DIR)/multi-loop
+	chmod +x $(BIN_DIR)/multi-loop
 	mkdir -p $(SKILLS_DIR)/more-loop-prompt $(SKILLS_DIR)/more-loop-verify $(SKILLS_DIR)/more-loop-oracle
 	cp $(REPO_DIR).claude/skills/more-loop-prompt/SKILL.md $(SKILLS_DIR)/more-loop-prompt/SKILL.md
 	cp $(REPO_DIR).claude/skills/more-loop-verify/SKILL.md $(SKILLS_DIR)/more-loop-verify/SKILL.md
@@ -32,6 +34,7 @@ install: ## Copy more-loop binary and skills
 
 uninstall: ## Remove installed binary and skills
 	rm -f $(BIN_DIR)/more-loop
+	rm -f $(BIN_DIR)/multi-loop
 	rm -rf $(SKILLS_DIR)/more-loop-prompt
 	rm -rf $(SKILLS_DIR)/more-loop-verify
 	rm -rf $(SKILLS_DIR)/more-loop-oracle
@@ -41,6 +44,7 @@ uninstall: ## Remove installed binary and skills
 link: ## Symlink binary and skills (for development)
 	mkdir -p $(BIN_DIR)
 	ln -sf $(REPO_DIR)more-loop $(BIN_DIR)/more-loop
+	ln -sf $(REPO_DIR)multi-loop $(BIN_DIR)/multi-loop
 	mkdir -p $(SKILLS_DIR)/more-loop-prompt $(SKILLS_DIR)/more-loop-verify $(SKILLS_DIR)/more-loop-oracle
 	ln -sf $(REPO_DIR).claude/skills/more-loop-prompt/SKILL.md $(SKILLS_DIR)/more-loop-prompt/SKILL.md
 	ln -sf $(REPO_DIR).claude/skills/more-loop-verify/SKILL.md $(SKILLS_DIR)/more-loop-verify/SKILL.md
@@ -62,6 +66,7 @@ link: ## Symlink binary and skills (for development)
 
 unlink: ## Remove symlinks
 	rm -f $(BIN_DIR)/more-loop
+	rm -f $(BIN_DIR)/multi-loop
 	rm -rf $(SKILLS_DIR)/more-loop-prompt
 	rm -rf $(SKILLS_DIR)/more-loop-verify
 	rm -rf $(SKILLS_DIR)/more-loop-oracle
