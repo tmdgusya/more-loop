@@ -27,6 +27,8 @@ make link                 # Symlink for development (edits reflected immediately
 ## Project structure
 
 - `more-loop` — Main executable bash script
+- `multi-loop` — Universal multi-provider parallel runner (tmux-based)
+- `providers.json` — Provider config (env vars, CLI commands, setup scripts)
 - `install.sh` — Install/uninstall script
 - `Makefile` — Make targets for install/link/uninstall
 - `system-prompts/` — Phase-specific system prompts injected via `--append-system-prompt`

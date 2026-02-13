@@ -321,6 +321,61 @@ When resuming, `-n` means **additional iterations** (not total). So `-n 10` runs
 
 `--resume` reads `tasks.md`, `acceptance.md`, and `iterations/*.md` from the run directory to determine progress. Options like `-n`, `-m`, `-v` can be changed on resume.
 
+## Multi-Provider Parallel Mode
+
+Run the same spec across multiple AI providers simultaneously using `multi-loop`:
+
+### Quick start
+
+```bash
+# Run GLM, Kimi, and Claude in parallel
+multi-loop -n 10 -w prompt.md verify.sh
+
+# Run specific providers only
+multi-loop --providers glm,claude -n 8 prompt.md
+
+# Check status (from phone or another terminal)
+multi-loop --status
+
+# Stop all providers
+multi-loop --stop
+```
+
+### Provider config (`providers.json`)
+
+Providers are defined in a JSON config file. Each provider specifies:
+
+- `command` — CLI command template with `{args}`, `{prompt}`, `{verify}` placeholders
+- `env` — Environment variables to set before launch
+- `unset` — Environment variables to unset
+- `setup` — Shell command to run before launch (e.g., `source ~/.opencode/env.sh`)
+
+```bash
+# Generate default config
+multi-loop --init
+
+# Use custom config
+multi-loop --config my-providers.json -n 5 prompt.md
+```
+
+### Adding a custom provider
+
+Edit `providers.json`:
+
+```json
+{
+  "providers": {
+    "my-agent": {
+      "command": "my-cli --auto {prompt}",
+      "env": { "MY_API_KEY": "..." },
+      "setup": "source ~/.my-agent/env.sh"
+    }
+  }
+}
+```
+
+Config search order: `--config` flag > `./multi-loop.json` > `./providers.json` > `~/.config/multi-loop/providers.json`
+
 ## Bundled skills
 
 This repo includes three Claude Code skills for creating more-loop input files:
@@ -404,6 +459,8 @@ Progress from completed iterations is preserved. The in-progress iteration may b
 ```
 more-loop
 ├── more-loop                          # Main executable
+├── multi-loop                         # Multi-provider parallel runner (tmux)
+├── providers.json                     # Provider config (env vars, commands)
 ├── install.sh                         # Install/uninstall script
 ├── Makefile                           # Make targets for install/link
 ├── system-prompts/                    # Phase-specific LLM behavior control
@@ -421,7 +478,8 @@ more-loop
 │   ├── plans/                         # Implementation plans
 │   └── test-guide-example.md          # Example Test Guide
 ├── tests/                             # Integration tests
-│   └── test-oracle-integration.sh     # Oracle feature test
+│   ├── test-oracle-integration.sh     # Oracle feature test
+│   └── test-multi-loop.sh            # Multi-loop orchestrator tests
 ├── CLAUDE.md                          # Project instructions for Claude Code
 ├── README.md                          # This file
 └── README_ko.md                       # Korean documentation
