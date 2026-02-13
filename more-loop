@@ -181,8 +181,10 @@ if os.path.isdir(iter_dir):
             first_line = content.split('\n', 1)[0].strip().upper()
             if first_line.startswith('HONEST'):
                 entry['honesty_result'] = 'HONEST'
-            else:
+            elif first_line.startswith('DISHONEST'):
                 entry['honesty_result'] = 'DISHONEST'
+            else:
+                entry['honesty_result'] = 'SKIP'
             entry['honesty_detail'] = content
         elif match_type == 'verify':
             first_line = content.split('\n', 1)[0].strip().upper()
@@ -966,7 +968,7 @@ EOF
 
   echo "$result" > "${RUN_DIR}/iterations/${iter}-honesty.md"
 
-  if echo "$result" | head -5 | grep -qi "^HONEST"; then
+  if echo "$result" | head -5 | grep -qiE '^HONEST($|[^A-Z])'; then
     log_pass "[${iter}/${MAX_ITERATIONS}] Honesty check: HONEST"
     if [[ "$VERBOSE" == true ]]; then
       echo -e "${GREEN}━━━ HONESTY DETAIL ━━━${NC}" >&2
@@ -1539,7 +1541,8 @@ main() {
         # Results are logged and fed to next iteration as feedback
         run_verify "$iter" || true
       else
-        revert_last_task
+        # Restore snapshot — reverts ALL newly checked tasks, not just the last one
+        cp "${RUN_DIR}/.tasks-snapshot.md" "${RUN_DIR}/tasks.md"
         rm -f "${RUN_DIR}/.tasks-snapshot.md"
         log_warn "[${iter}/${MAX_ITERATIONS}] Task reverted — will retry next iteration"
       fi
