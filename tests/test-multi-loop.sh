@@ -145,6 +145,41 @@ assert_contains "status shows done phase" "done" "$status_output"
 
 rm -rf "$tmp_dir"
 
+echo "=== Test: tmux session creation with config ==="
+tmp_dir="$(mktemp -d)"
+echo "Build a hello world app" > "$tmp_dir/test-prompt.md"
+cp "$SCRIPT_DIR/providers.json" "$tmp_dir/providers.json"
+
+# Create fake more-loop
+mkdir -p "$tmp_dir/bin"
+cat > "$tmp_dir/bin/more-loop" <<'FAKE'
+#!/usr/bin/env bash
+echo "fake more-loop: $*"
+sleep 10
+FAKE
+chmod +x "$tmp_dir/bin/more-loop"
+
+test_session="multi-loop-test-$$"
+(cd "$tmp_dir" && PATH="$tmp_dir/bin:$PATH" "$MULTI_LOOP" \
+  --session "$test_session" --providers glm,claude -n 1 test-prompt.md 2>/dev/null)
+
+sleep 1
+if tmux has-session -t "$test_session" 2>/dev/null; then
+  window_list="$(tmux list-windows -t "$test_session" -F '#{window_name}')"
+  assert_contains "has glm window" "glm" "$window_list"
+  assert_contains "has claude window" "claude" "$window_list"
+  tmux kill-session -t "$test_session" 2>/dev/null || true
+else
+  echo "  FAIL: tmux session '$test_session' not found"
+  FAIL=1
+fi
+
+# Verify provider-specific prompt copies were created
+assert_eq "glm prompt copy exists" "0" "$(test -f "$tmp_dir/test-prompt-glm.md" && echo 0 || echo 1)"
+assert_eq "claude prompt copy exists" "0" "$(test -f "$tmp_dir/test-prompt-claude.md" && echo 0 || echo 1)"
+
+rm -rf "$tmp_dir"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
   echo "All tests passed"
