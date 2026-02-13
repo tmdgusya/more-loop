@@ -164,20 +164,27 @@ if os.path.isdir(iter_dir):
     files = sorted(glob.glob(os.path.join(iter_dir, '*.md')))
     for f in files:
         name = os.path.basename(f)
-        m = re.match(r'^(\d+)(-(verify))?\.md$', name)
+        m = re.match(r'^(\d+)(-(verify|honesty))?\.md$', name)
         if not m:
             continue
         num = int(m.group(1))
-        is_verify = m.group(3) is not None
+        match_type = m.group(3)  # None, 'verify', or 'honesty'
 
         # Find or create entry for this iteration number
         entry = next((e for e in iterations if e['number'] == num), None)
         if entry is None:
-            entry = {'number': num, 'summary': '', 'verify_result': '', 'verify_detail': ''}
+            entry = {'number': num, 'summary': '', 'verify_result': '', 'verify_detail': '', 'honesty_result': '', 'honesty_detail': ''}
             iterations.append(entry)
 
         content = open(f).read()
-        if is_verify:
+        if match_type == 'honesty':
+            first_line = content.split('\n', 1)[0].strip().upper()
+            if first_line.startswith('HONEST'):
+                entry['honesty_result'] = 'HONEST'
+            else:
+                entry['honesty_result'] = 'DISHONEST'
+            entry['honesty_detail'] = content
+        elif match_type == 'verify':
             first_line = content.split('\n', 1)[0].strip().upper()
             if first_line.startswith('PASS'):
                 entry['verify_result'] = 'PASS'
