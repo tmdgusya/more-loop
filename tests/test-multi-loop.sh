@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MULTI_LOOP="$SCRIPT_DIR/multi-loop"
+FAIL=0
+
+assert_eq() {
+  local desc="$1" expected="$2" actual="$3"
+  if [[ "$expected" == "$actual" ]]; then
+    echo "  PASS: $desc"
+  else
+    echo "  FAIL: $desc (expected='$expected', actual='$actual')"
+    FAIL=1
+  fi
+}
+
+assert_contains() {
+  local desc="$1" pattern="$2" text="$3"
+  if echo "$text" | grep -qF -- "$pattern"; then
+    echo "  PASS: $desc"
+  else
+    echo "  FAIL: $desc (pattern='$pattern' not found)"
+    FAIL=1
+  fi
+}
+
+assert_not_contains() {
+  local desc="$1" pattern="$2" text="$3"
+  if echo "$text" | grep -qF -- "$pattern"; then
+    echo "  FAIL: $desc (pattern='$pattern' found but should not be)"
+    FAIL=1
+  else
+    echo "  PASS: $desc"
+  fi
+}
+
+echo "=== Test: providers.json exists and is valid JSON ==="
+test -f "$SCRIPT_DIR/providers.json"
+assert_eq "providers.json exists" "0" "$?"
+python3 -c "import json; json.load(open('$SCRIPT_DIR/providers.json'))" 2>/dev/null
+assert_eq "providers.json is valid JSON" "0" "$?"
+
+echo "=== Test: providers.json has required providers ==="
+providers_output="$(python3 -c "
+import json
+d = json.load(open('$SCRIPT_DIR/providers.json'))
+for name in d.get('providers', {}):
+    print(name)
+")"
+assert_contains "has glm provider" "glm" "$providers_output"
+assert_contains "has kimi provider" "kimi" "$providers_output"
+assert_contains "has claude provider" "claude" "$providers_output"
+
+echo "=== Test: each provider has 'command' field ==="
+missing="$(python3 -c "
+import json
+d = json.load(open('$SCRIPT_DIR/providers.json'))
+for name, cfg in d.get('providers', {}).items():
+    if 'command' not in cfg:
+        print(name)
+")"
+assert_eq "all providers have command" "" "$missing"
+
+echo "=== Test: multi-loop exists and is executable ==="
+test -x "$MULTI_LOOP"
+assert_eq "script is executable" "0" "$?"
+
+echo "=== Test: --help shows usage ==="
+help_output="$("$MULTI_LOOP" --help 2>&1)"
+assert_contains "shows usage" "Usage:" "$help_output"
+assert_contains "shows --providers" "--providers" "$help_output"
+assert_contains "shows --status" "--status" "$help_output"
+assert_contains "shows --config" "--config" "$help_output"
+assert_contains "shows --init" "--init" "$help_output"
+
+echo "=== Test: --dry-run with default config ==="
+tmp_dir="$(mktemp -d)"
+echo "Build a hello world app" > "$tmp_dir/test-prompt.md"
+cp "$SCRIPT_DIR/providers.json" "$tmp_dir/providers.json"
+
+dry_output="$(cd "$tmp_dir" && "$MULTI_LOOP" --dry-run --providers glm,claude -n 3 test-prompt.md 2>&1)"
+assert_contains "dry-run shows glm section" "Provider: glm" "$dry_output"
+assert_contains "dry-run shows claude section" "Provider: claude" "$dry_output"
+assert_contains "dry-run shows glm env" "z.ai" "$dry_output"
+assert_contains "dry-run shows claude unset" "unset ANTHROPIC" "$dry_output"
+assert_contains "dry-run shows more-loop cmd" "more-loop" "$dry_output"
+assert_contains "dry-run shows -n 3" "-n 3" "$dry_output"
+
+echo "=== Test: --dry-run with custom config ==="
+cat > "$tmp_dir/custom.json" <<'JSON'
+{
+  "providers": {
+    "my-agent": {
+      "command": "my-cli --auto {prompt}",
+      "env": { "MY_API_KEY": "test123" },
+      "setup": "echo setting up"
+    }
+  }
+}
+JSON
+
+custom_output="$(cd "$tmp_dir" && "$MULTI_LOOP" --dry-run --config custom.json test-prompt.md 2>&1)"
+assert_contains "custom provider shown" "Provider: my-agent" "$custom_output"
+assert_contains "custom command used" "my-cli --auto" "$custom_output"
+assert_contains "custom env set" "MY_API_KEY" "$custom_output"
+assert_contains "custom setup run" "echo setting up" "$custom_output"
+assert_not_contains "no more-loop for custom" "more-loop" "$custom_output"
+
+rm -rf "$tmp_dir"
+
+echo "=== Test: --status reads state.json ==="
+tmp_dir="$(mktemp -d)"
+cp "$SCRIPT_DIR/providers.json" "$tmp_dir/providers.json"
+mkdir -p "$tmp_dir/.more-loop/myapp-glm"
+mkdir -p "$tmp_dir/.more-loop/myapp-claude"
+
+cat > "$tmp_dir/.more-loop/myapp-glm/state.json" <<'JSON'
+{
+  "run_name": "myapp-glm",
+  "phase": "task",
+  "current_iteration": 3,
+  "max_iterations": 10,
+  "tasks_completed": 2,
+  "tasks_total": 5
+}
+JSON
+
+cat > "$tmp_dir/.more-loop/myapp-claude/state.json" <<'JSON'
+{
+  "run_name": "myapp-claude",
+  "phase": "done",
+  "current_iteration": 10,
+  "max_iterations": 10,
+  "tasks_completed": 5,
+  "tasks_total": 5
+}
+JSON
+
+status_output="$(cd "$tmp_dir" && "$MULTI_LOOP" --status 2>&1)"
+assert_contains "status shows glm" "myapp-glm" "$status_output"
+assert_contains "status shows claude" "myapp-claude" "$status_output"
+assert_contains "status shows task phase" "task" "$status_output"
+assert_contains "status shows done phase" "done" "$status_output"
+
+rm -rf "$tmp_dir"
+
+echo "=== Test: tmux session creation with config ==="
+tmp_dir="$(mktemp -d)"
+echo "Build a hello world app" > "$tmp_dir/test-prompt.md"
+cp "$SCRIPT_DIR/providers.json" "$tmp_dir/providers.json"
+
+# Create fake more-loop
+mkdir -p "$tmp_dir/bin"
+cat > "$tmp_dir/bin/more-loop" <<'FAKE'
+#!/usr/bin/env bash
+echo "fake more-loop: $*"
+sleep 10
+FAKE
+chmod +x "$tmp_dir/bin/more-loop"
+
+test_session="multi-loop-test-$$"
+(cd "$tmp_dir" && PATH="$tmp_dir/bin:$PATH" "$MULTI_LOOP" \
+  --session "$test_session" --providers glm,claude -n 1 test-prompt.md 2>/dev/null)
+
+sleep 1
+if tmux has-session -t "$test_session" 2>/dev/null; then
+  window_list="$(tmux list-windows -t "$test_session" -F '#{window_name}')"
+  assert_contains "has glm window" "glm" "$window_list"
+  assert_contains "has claude window" "claude" "$window_list"
+  tmux kill-session -t "$test_session" 2>/dev/null || true
+else
+  echo "  FAIL: tmux session '$test_session' not found"
+  FAIL=1
+fi
+
+# Verify provider-specific prompt copies were created
+assert_eq "glm prompt copy exists" "0" "$(test -f "$tmp_dir/test-prompt-glm.md" && echo 0 || echo 1)"
+assert_eq "claude prompt copy exists" "0" "$(test -f "$tmp_dir/test-prompt-claude.md" && echo 0 || echo 1)"
+
+rm -rf "$tmp_dir"
+
+echo "=== Test: --init creates providers.json ==="
+tmp_dir="$(mktemp -d)"
+(cd "$tmp_dir" && "$MULTI_LOOP" --init <<< "y" 2>/dev/null)
+assert_eq "init creates providers.json" "0" "$(test -f "$tmp_dir/providers.json" && echo 0 || echo 1)"
+
+# Verify it's valid JSON with expected providers
+init_providers="$(python3 -c "
+import json
+d = json.load(open('$tmp_dir/providers.json'))
+print(' '.join(sorted(d.get('providers', {}).keys())))
+")"
+assert_contains "init has claude" "claude" "$init_providers"
+assert_contains "init has glm" "glm" "$init_providers"
+
+rm -rf "$tmp_dir"
+
+echo ""
+echo "================================"
+if [[ $FAIL -eq 0 ]]; then
+  echo "ALL TESTS PASSED"
+  exit 0
+else
+  echo "SOME TESTS FAILED"
+  exit 1
+fi

@@ -30,6 +30,11 @@ install() {
   chmod +x "$BIN_DIR/more-loop"
   echo "  Installed $BIN_DIR/more-loop"
 
+  rm -f "$BIN_DIR/multi-loop"
+  cp "$SCRIPT_DIR/multi-loop" "$BIN_DIR/multi-loop"
+  chmod +x "$BIN_DIR/multi-loop"
+  echo "  Installed $BIN_DIR/multi-loop"
+
   # Skills — remove first to handle existing symlinks
   mkdir -p "$SKILLS_DIR/more-loop-prompt"
   mkdir -p "$SKILLS_DIR/more-loop-verify"
@@ -79,6 +84,9 @@ uninstall() {
 
   rm -f "$BIN_DIR/more-loop"
   echo "  Removed $BIN_DIR/more-loop"
+
+  rm -f "$BIN_DIR/multi-loop"
+  echo "  Removed $BIN_DIR/multi-loop"
 
   rm -rf "$SKILLS_DIR/more-loop-prompt"
   rm -rf "$SKILLS_DIR/more-loop-verify"
