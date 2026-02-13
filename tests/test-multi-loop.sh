@@ -180,10 +180,28 @@ assert_eq "claude prompt copy exists" "0" "$(test -f "$tmp_dir/test-prompt-claud
 
 rm -rf "$tmp_dir"
 
+echo "=== Test: --init creates providers.json ==="
+tmp_dir="$(mktemp -d)"
+(cd "$tmp_dir" && "$MULTI_LOOP" --init <<< "y" 2>/dev/null)
+assert_eq "init creates providers.json" "0" "$(test -f "$tmp_dir/providers.json" && echo 0 || echo 1)"
+
+# Verify it's valid JSON with expected providers
+init_providers="$(python3 -c "
+import json
+d = json.load(open('$tmp_dir/providers.json'))
+print(' '.join(sorted(d.get('providers', {}).keys())))
+")"
+assert_contains "init has claude" "claude" "$init_providers"
+assert_contains "init has glm" "glm" "$init_providers"
+
+rm -rf "$tmp_dir"
+
 echo ""
+echo "================================"
 if [[ $FAIL -eq 0 ]]; then
-  echo "All tests passed"
+  echo "ALL TESTS PASSED"
+  exit 0
 else
-  echo "Some tests FAILED"
+  echo "SOME TESTS FAILED"
   exit 1
 fi
