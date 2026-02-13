@@ -1518,15 +1518,24 @@ main() {
     maybe_write_state "iteration_start"
 
     if [[ "$remaining" -gt 0 ]]; then
-      # Task mode — snapshot for enforce_single_task only
+      # Task mode — snapshot for enforce_single_task and honesty check
       cp "${RUN_DIR}/tasks.md" "${RUN_DIR}/.tasks-snapshot.md"
       run_task_iteration "$iter" || true
       enforce_single_task "${RUN_DIR}/.tasks-snapshot.md"
-      rm -f "${RUN_DIR}/.tasks-snapshot.md"
 
-      # Verify — informational only, no rollback
-      # Results are logged and fed to next iteration as feedback
-      run_verify "$iter" || true
+      # Honesty check — verify agent actually implemented the task
+      # If dishonest, revert task and skip verify
+      if run_honesty_check "$iter" "${RUN_DIR}/.tasks-snapshot.md"; then
+        rm -f "${RUN_DIR}/.tasks-snapshot.md"
+
+        # Verify — informational only, no rollback
+        # Results are logged and fed to next iteration as feedback
+        run_verify "$iter" || true
+      else
+        revert_last_task
+        rm -f "${RUN_DIR}/.tasks-snapshot.md"
+        log_warn "[${iter}/${MAX_ITERATIONS}] Task reverted — will retry next iteration"
+      fi
     else
       # All tasks done — first run audit, then improve/fix cycle
       if [[ ! -f "${RUN_DIR}/audit.md" ]]; then
