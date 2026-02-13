@@ -109,6 +109,42 @@ assert_not_contains "no more-loop for custom" "more-loop" "$custom_output"
 
 rm -rf "$tmp_dir"
 
+echo "=== Test: --status reads state.json ==="
+tmp_dir="$(mktemp -d)"
+cp "$SCRIPT_DIR/providers.json" "$tmp_dir/providers.json"
+mkdir -p "$tmp_dir/.more-loop/myapp-glm"
+mkdir -p "$tmp_dir/.more-loop/myapp-claude"
+
+cat > "$tmp_dir/.more-loop/myapp-glm/state.json" <<'JSON'
+{
+  "run_name": "myapp-glm",
+  "phase": "task",
+  "current_iteration": 3,
+  "max_iterations": 10,
+  "tasks_completed": 2,
+  "tasks_total": 5
+}
+JSON
+
+cat > "$tmp_dir/.more-loop/myapp-claude/state.json" <<'JSON'
+{
+  "run_name": "myapp-claude",
+  "phase": "done",
+  "current_iteration": 10,
+  "max_iterations": 10,
+  "tasks_completed": 5,
+  "tasks_total": 5
+}
+JSON
+
+status_output="$(cd "$tmp_dir" && "$MULTI_LOOP" --status 2>&1)"
+assert_contains "status shows glm" "myapp-glm" "$status_output"
+assert_contains "status shows claude" "myapp-claude" "$status_output"
+assert_contains "status shows task phase" "task" "$status_output"
+assert_contains "status shows done phase" "done" "$status_output"
+
+rm -rf "$tmp_dir"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
   echo "All tests passed"
