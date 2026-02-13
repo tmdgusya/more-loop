@@ -74,6 +74,41 @@ assert_contains "shows --status" "--status" "$help_output"
 assert_contains "shows --config" "--config" "$help_output"
 assert_contains "shows --init" "--init" "$help_output"
 
+echo "=== Test: --dry-run with default config ==="
+tmp_dir="$(mktemp -d)"
+echo "Build a hello world app" > "$tmp_dir/test-prompt.md"
+cp "$SCRIPT_DIR/providers.json" "$tmp_dir/providers.json"
+
+dry_output="$(cd "$tmp_dir" && "$MULTI_LOOP" --dry-run --providers glm,claude -n 3 test-prompt.md 2>&1)"
+assert_contains "dry-run shows glm section" "Provider: glm" "$dry_output"
+assert_contains "dry-run shows claude section" "Provider: claude" "$dry_output"
+assert_contains "dry-run shows glm env" "z.ai" "$dry_output"
+assert_contains "dry-run shows claude unset" "unset ANTHROPIC" "$dry_output"
+assert_contains "dry-run shows more-loop cmd" "more-loop" "$dry_output"
+assert_contains "dry-run shows -n 3" "-n 3" "$dry_output"
+
+echo "=== Test: --dry-run with custom config ==="
+cat > "$tmp_dir/custom.json" <<'JSON'
+{
+  "providers": {
+    "my-agent": {
+      "command": "my-cli --auto {prompt}",
+      "env": { "MY_API_KEY": "test123" },
+      "setup": "echo setting up"
+    }
+  }
+}
+JSON
+
+custom_output="$(cd "$tmp_dir" && "$MULTI_LOOP" --dry-run --config custom.json test-prompt.md 2>&1)"
+assert_contains "custom provider shown" "Provider: my-agent" "$custom_output"
+assert_contains "custom command used" "my-cli --auto" "$custom_output"
+assert_contains "custom env set" "MY_API_KEY" "$custom_output"
+assert_contains "custom setup run" "echo setting up" "$custom_output"
+assert_not_contains "no more-loop for custom" "more-loop" "$custom_output"
+
+rm -rf "$tmp_dir"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
   echo "All tests passed"
