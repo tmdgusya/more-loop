@@ -4,5 +4,8 @@ web-dashboard.md
 verify-web-dashboard-quality.md
 verify-web-dashboard.sh
 
+# worktrees
+.worktrees/
+
 # pycache
 __pycache__
