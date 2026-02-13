@@ -17,7 +17,7 @@ assert_eq() {
 
 assert_contains() {
   local desc="$1" pattern="$2" text="$3"
-  if echo "$text" | grep -q "$pattern"; then
+  if echo "$text" | grep -qF -- "$pattern"; then
     echo "  PASS: $desc"
   else
     echo "  FAIL: $desc (pattern='$pattern' not found)"
@@ -27,7 +27,7 @@ assert_contains() {
 
 assert_not_contains() {
   local desc="$1" pattern="$2" text="$3"
-  if echo "$text" | grep -q "$pattern"; then
+  if echo "$text" | grep -qF -- "$pattern"; then
     echo "  FAIL: $desc (pattern='$pattern' found but should not be)"
     FAIL=1
   else
@@ -62,9 +62,21 @@ for name, cfg in d.get('providers', {}).items():
 ")"
 assert_eq "all providers have command" "" "$missing"
 
+echo "=== Test: multi-loop exists and is executable ==="
+test -x "$MULTI_LOOP"
+assert_eq "script is executable" "0" "$?"
+
+echo "=== Test: --help shows usage ==="
+help_output="$("$MULTI_LOOP" --help 2>&1)"
+assert_contains "shows usage" "Usage:" "$help_output"
+assert_contains "shows --providers" "--providers" "$help_output"
+assert_contains "shows --status" "--status" "$help_output"
+assert_contains "shows --config" "--config" "$help_output"
+assert_contains "shows --init" "--init" "$help_output"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
-  echo "All config tests passed"
+  echo "All tests passed"
 else
   echo "Some tests FAILED"
   exit 1
