@@ -902,6 +902,82 @@ enforce_single_task() {
   done
 }
 
+run_honesty_check() {
+  local iter="$1"
+  local snapshot_file="$2"
+  local tasks_file="${RUN_DIR}/tasks.md"
+
+  # Extract newly checked tasks by diffing before/after
+  local new_tasks
+  new_tasks="$(diff "$snapshot_file" "$tasks_file" | grep '^>' | sed 's/^> //' | grep '^\- \[x\]' || true)"
+
+  if [[ -z "$new_tasks" ]]; then
+    # No new tasks were checked — nothing to verify
+    log_warn "[${iter}/${MAX_ITERATIONS}] Honesty check: SKIP (no new tasks checked)"
+    echo "SKIP — no new tasks checked" > "${RUN_DIR}/iterations/${iter}-honesty.md"
+    return 0
+  fi
+
+  log "[${iter}/${MAX_ITERATIONS}] Honesty check — verifying task completion"
+
+  maybe_write_state "honesty_check"
+
+  # Get iteration summary
+  local iter_summary=""
+  if [[ -f "${RUN_DIR}/iterations/${iter}.md" ]]; then
+    iter_summary="$(cat "${RUN_DIR}/iterations/${iter}.md")"
+  fi
+
+  local sys_prompt
+  sys_prompt="$(load_system_prompt honesty)"
+
+  local prompt
+  IFS= read -r -d "" prompt <<EOF || true
+You are a honesty verification agent. Another Agent claims to have completed tasks.
+Assume the claims are FALSE until you find evidence proving them true.
+
+## Tasks checked off in this iteration:
+${new_tasks}
+
+## Agent's work summary:
+${iter_summary}
+
+## Instructions:
+1. For each checked task above, search the codebase and READ the actual code
+2. Verify that a substantive implementation matching the task description exists
+3. Output HONEST or DISHONEST as the FIRST line, followed by per-task justification
+
+Be skeptical. Read actual files. Do not trust the summary above.
+EOF
+
+  local result
+  if ! result="$(run_claude "$prompt" "$sys_prompt")"; then
+    log_fail "[${iter}/${MAX_ITERATIONS}] Honesty check: ERROR (claude failed)"
+    echo "DISHONEST — honesty check claude process failed" > "${RUN_DIR}/iterations/${iter}-honesty.md"
+    return 1
+  fi
+
+  echo "$result" > "${RUN_DIR}/iterations/${iter}-honesty.md"
+
+  if echo "$result" | head -5 | grep -qi "^HONEST"; then
+    log_pass "[${iter}/${MAX_ITERATIONS}] Honesty check: HONEST"
+    if [[ "$VERBOSE" == true ]]; then
+      echo -e "${GREEN}━━━ HONESTY DETAIL ━━━${NC}" >&2
+      echo "$result" >&2
+      echo -e "${GREEN}━━━ END ━━━${NC}" >&2
+    fi
+    return 0
+  else
+    log_fail "[${iter}/${MAX_ITERATIONS}] Honesty check: DISHONEST"
+    if [[ "$VERBOSE" == true ]]; then
+      echo -e "${RED}━━━ HONESTY DETAIL ━━━${NC}" >&2
+      echo "$result" >&2
+      echo -e "${RED}━━━ END ━━━${NC}" >&2
+    fi
+    return 1
+  fi
+}
+
 run_audit_iteration() {
   local iter="$1"
 
