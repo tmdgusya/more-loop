@@ -968,7 +968,7 @@ EOF
 
   echo "$result" > "${RUN_DIR}/iterations/${iter}-honesty.md"
 
-  if echo "$result" | head -5 | grep -qiE '^HONEST($|[^A-Z])'; then
+  if echo "$result" | grep -qiE '^HONEST($|[^A-Z])'; then
     log_pass "[${iter}/${MAX_ITERATIONS}] Honesty check: HONEST"
     if [[ "$VERBOSE" == true ]]; then
       echo -e "${GREEN}━━━ HONESTY DETAIL ━━━${NC}" >&2
